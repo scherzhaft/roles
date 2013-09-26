@@ -1,0 +1,32 @@
+#!/bin/bash
+
+##set -x
+
+ARGS="${*}"
+SLACKROLE=`echo "${ARGS}"|awk -F\. {'print $1'}`
+SUBROLESTATE=`echo "${ARGS}"|awk -F\. {'print $2'}`
+SUBROLESERVICE=`echo "${ARGS}"|awk -F\. {'print $3'}`
+CURRSTATE=`svcs -H "${SUBROLESERVICE}"|awk {'print $1'}|grep -v "^${SUBROLESTATE}"`
+test "X${SUBROLESTATE}" = "Xenable" && CURRSTATE=`svcs -H "${SUBROLESERVICE}"|awk {'print $1'}|grep -v "^online"`
+
+/usr/sbin/slack-slaper global-solaris-adminfunctions
+. /etc/default/SYSconstants
+test "X${__HOSTNAME}" = "X" && exit 0
+
+rerole()
+{
+
+CLEANROLELIST=`/usr/sbin/slack-slaper --rolelist.|grep "^$__HOSTNAME"|awk -F\: {'print $2'}|grep -v "^${SLACKROLE}\."|sort -u`
+
+for role in `echo "${CLEANROLELIST}"` ; do
+  /usr/sbin/slack-slaper $role
+done
+
+}
+     
+if [ "X${CURRSTATE}" != X -a "X${SUBROLESERVICE}" != X -a "X${SUBROLESTATE}" != X ] ; then
+  /usr/sbin/svcadm "${SUBROLESTATE}" "${SUBROLESERVICE}"
+  rerole
+else
+  echo "${SUBROLESERVICE} already set to ${SUBROLESTATE}"
+fi

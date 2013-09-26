@@ -1,0 +1,41 @@
+#!/bin/bash
+
+fixsysupdate()
+{
+
+set -x
+LSB_REL=`/usr/bin/lsb_release -a`
+##test "X${*}" != "X" && ARG_CAT=`cat ${*} 2>/dev/null`
+##test "X${ARG_CAT}" != "X" && LSB_REL="${ARG_CAT}"
+
+. /etc/default/SYSconstants 
+if [ "X${__SHORTSUPPORT}" != "X" ] ; then
+  case "${LSB_REL}" in
+    *Distributor*ID:*EnterpriseEnterprise*Description:*Enterprise*Linux*Enterprise*Linux*)
+      echo "OEL"
+      test -f etc/yum.repos.d/sysupdate.repo.OEL && cat etc/yum.repos.d/sysupdate.repo.OEL > etc/yum.repos.d/sysupdate.repo
+    ;;
+    *Distributor*ID:*RedHatEnterpriseServer*Description:*Red*Hat*Enterprise*Linux*Server*release*5\.*)
+      echo "RHEL"
+      test -f etc/yum.repos.d/sysupdate.repo.RHEL && cat etc/yum.repos.d/sysupdate.repo.RHEL > etc/yum.repos.d/sysupdate.repo
+    ;;
+    *Distributor*ID:*OracleVMserver*Description:*Oracle*VM*server*release*2.2*)
+      echo "OVM22"
+      test -f etc/yum.repos.d/sysupdate.repo.OVM22 && cat etc/yum.repos.d/sysupdate.repo.OVM22 > etc/yum.repos.d/sysupdate.repo
+  esac
+fi
+
+if [ "${__SITE}" = "ppa" ]; then
+  test -f opt/SYSpca-client/pca.conf && perl -pi -e "s/%SHORTSUPPORT%/${__SUPPORTdr1}/g" opt/SYSpca-client/pca.conf
+  test -f etc/yum.repos.d/sysupdate.repo && perl -pi -e "s|%SHORTSUPPORT%|${__SHORTSUPPORT}|g" etc/yum.repos.d/sysupdate.repo
+else
+  test -f opt/SYSpca-client/pca.conf && perl -pi -e "s/%SHORTSUPPORT%/${__SHORTSUPPORT}/g" opt/SYSpca-client/pca.conf
+  test -f etc/yum.repos.d/sysupdate.repo && perl -pi -e "s|%SHORTSUPPORT%|${__SHORTSUPPORT}|g" etc/yum.repos.d/sysupdate.repo
+
+fi
+
+
+rm -f etc/yum.repos.d/sysupdate.repo.*
+
+}
+

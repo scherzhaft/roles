@@ -1,0 +1,5 @@
+#!/bin/bash
+
+${PCACLIENT}/pca -X ${PCACLIENT}/ -y -f ${SPOOL} -l missingrs|perl -p -e 's/\/[1-9].*\)$/\/9999\)/' >${SPOOL}/pca.patch.report
+
+${PCACLIENT}/pca -X ${PCACLIENT}/ -y -f ${SPOOL} -L missingrs|perl -p -e 's/\/[1-9].*\)/\/9999\)/;s/\<td align\=right\>.*[0-9].*\<td\>/\<td align\=right\>\<td\>/g;s/\<th\>Age\<\/th\>/\<th\>\<\/th\> /' >${SPOOL}/pca.patch.report.html

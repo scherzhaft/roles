@@ -1,0 +1,208 @@
+#!/bin/bash -x
+
+. /etc/profile
+. /etc/default/SYSconstants
+
+if [ -f '/tmp/system.fetch.log' ] ; then
+ FETCHLOG='/tmp/system.fetch.log'
+else
+ FETCHLOG='/dev/null'
+fi
+
+SYSSVNROOT="/sysbuild/system"
+SUMMARY="${SYSSVNROOT}/summary"
+SUMMARY_D="/odirtools/scripts/summary.d"
+SYSINFOSNAP="/sysbuild/.systemInfoSnap"
+touch "${SYSINFOSNAP}"
+
+SYSTEMSEARCH=`__ldapsearchhandler -x -LLL -b ou=hosts,${__LDAPDN} ou=*.FOO.FOO.* hostcksum`
+SYSTEMSTATUS=$?
+
+if [ "X${SYSTEMSTATUS}" != "X0" ] ; then
+ echo "error in:SYSTEMSEARCH"
+ echo "exit ${SYSTEMSTATUS}"
+ exit ${SYSTEMSTATUS}
+fi
+
+SYSTEMINFO=`echo "${SYSTEMSEARCH}"|perl -p -e "s/\n/ /g"|perl -p -e "s/dn\: /\ndn\: /g"|perl -p -e 's/$/\n/g'|sort -u|grep '.'|grep ' .*hostcksum: .*'|perl -p -e "s/,ou=hosts,.*hostcksum: / hostcksum: /g"|perl -p -e 's/^dn: *ou=//g'|awk {'print $1":"$2":"$3":"$4'}|perl -p -e 's/:hostcksum::/:hostcksum:/g'`
+
+svnpurge()
+{
+SVNHOSTS=`ls ${SYSSVNROOT}|grep -v "^summary$"|sort -u`
+LDAPHOSTS=`cat ${SYSINFOSNAP}|awk -F: {'print $1'}|sort -u`
+SVNCKSUM=`echo "${SVNHOSTS}"|cksum - `
+LDAPCKSUM=`echo "${LDAPHOSTS}"|cksum - `
+
+if [ "X${SVNCKSUM}" != "X${LDAPCKSUM}" ] ; then
+ echo "${SVNHOSTS}" >/tmp/.svnhosts$$
+ SVNLDAPDIFF=`echo "${LDAPHOSTS}"|diff /tmp/.svnhosts$$ - |grep -- "^< "`
+ for SVNLDAPDIFFli in `echo "${SVNLDAPDIFF}"` ; do
+  if [ -d "${SYSSVNROOT}/${SVNLDAPDIFFli}" -a "X${SVNLDAPDIFFli}" != "X" -a "X${SVNLDAPDIFFli}" != "X." -a "X${SVNLDAPDIFFli}" != "X.." -a "X${SVNLDAPDIFFli}" != "X./" ] ; then
+   cd  "${SYSSVNROOT}"
+   svn checkout file:///odirtools/svn/svnroot/system/${SVNLDAPDIFFli}
+   svn rm "${SVNLDAPDIFFli}"
+   svn commit -m "sysupdate: purged idle system" ${SVNLDAPDIFFli}
+#   svn rm "${SYSSVNROOT}/${SVNLDAPDIFFli}"
+#   svn commit -m "sysupdate: purged idle system" "${SYSSVNROOT}"
+  fi
+  ##sleep 6
+ done
+fi
+
+rm -rf /tmp/.svnhosts$$
+return 0
+}
+
+main()
+{
+ARGS="$*"
+clearlog
+DIFF=`echo "${SYSTEMINFO}"|diff "${SYSINFOSNAP}" - |grep -- "^> "`
+
+if [ "X${DIFF}" != "X" ] ; then
+ if [ "X${ARGS}" = "Xsvnpurge" ] ; then
+  echo "sysinfo snap is out of date."
+  echo "you need to first run: `basename $0` without args to update."
+  exit 1
+ fi
+ echo "####fetching system update `date` ####"
+ doit
+ DOITSTATUS="$?"
+ if [ "X${DOITSTATUS}" = "X0" ] ; then
+  updatesummaries
+  finalizechanges
+ fi
+ rm -rf /var/tmp/ldapsearch-hostdata-*
+ echo "####system update complete `date` ####" 
+else
+ if [ "X${ARGS}" = "Xsvnpurge" ] ; then
+  svnpurge
+  exit $?
+ else
+  echo "####no system updates...doing nothing `date` ####"
+ fi
+fi
+}
+
+clearlog()
+{
+LOGSIZE=`ls -la /tmp/system.fetch.log 2>&1`
+LOGSTAT="$?"
+if [ "X${LOGSTAT}" = "X0" ] ; then
+ LOGSIZE=`echo "${LOGSIZE}"|awk {'print $5'}`
+ if [ "X${LOGSIZE}" != "X" ] ; then
+  SIZETEST=`expr "${LOGSIZE}" \* 1 2>&1`
+  SIZETESTSTAT="$?"
+  if [ "X${SIZETESTSTAT}" = "X0" ] ; then
+   if [ "${LOGSIZE}" -gt "524288000" ] ; then
+    cat /dev/null > /tmp/system.fetch.log
+   fi
+  fi
+ fi
+fi
+  
+}
+
+
+doit()
+{
+
+UPDATEHOSTLIST=`echo "${DIFF}"|perl -p -e "s/^> //g"|grep ':hostcksum:'`
+for hostli in `echo "${UPDATEHOSTLIST}"` ; do
+ UPDATEHOST=`echo "${hostli}"|awk -F\: {'print $1'}`
+ FETCHSYSTEMZIP=`__ldapsearchhandler -x -LLL -b ou=${UPDATEHOST},ou=hosts,${__LDAPDN} -D "cn=%FETCHUSR%,ou=profile,${__LDAPDN}" -y %CRED% -t hostdata hostcksum`
+ FETCHSTATUS=$?
+ if [ "X${FETCHSTATUS}" = "X0" ] ; then
+  ZIPFILE=`echo "${FETCHSYSTEMZIP}"|grep "^hostdata:"|awk {'print $2'}|perl -p -e "s/file:\/\///g"|perl -p -e "s/\/\//\//g"`
+  file "${ZIPFILE}"|grep -i ".*:.*ZIP.*" >/dev/null
+  ISZIP=$?
+  if [ "X${ISZIP}" = "X0" ] ; then
+   UNAME=`unzip -p "${ZIPFILE}" uname.out`
+   UNAMESTATUS=$?
+   SYSNAME=`echo "${UNAME}"|awk {'print $2'}|grep "FOO.FOO."`
+   SYSNAMESTATUS=$?
+   if [ "X${SYSNAMESTATUS}" = "X0" -a "X${UNAMESTATUS}" = "X0" ] ; then
+    SUDO_USER=`unzip -l ${ZIPFILE}|grep "^SUDO_USER:"|awk -F\: {'print $2'}|awk {'print $1'}`
+    USERTEST=`getent passwd|awk -F\: {'print $1'}|sort -u|grep "^${SUDO_USER}$"`
+    USERTESTSTATUS="$?"
+    mkdir -p ${SYSSVNROOT}/${SYSNAME}
+    unzip -o ${ZIPFILE} -d ${SYSSVNROOT}/${SYSNAME}
+    rm -rf ${ZIPFILE}
+    chmod -R 770 ${SYSSVNROOT}/${SYSNAME}
+    chown -R svn:svn ${SYSSVNROOT}/${SYSNAME}
+    chmod -R ug+s ${SYSSVNROOT}/${SYSNAME}
+    cd ${SYSSVNROOT}
+    NEWSYSITEMS=`svn st ${SYSNAME}|grep " .*${SYSNAME}"|grep "^? .*"|awk {'print $2'}`
+    if [ "X${NEWSYSITEMS}" != "X" ] ; then
+     if [ "X${SUDO_USER}" != "X" -a "X${USERTESTSTATUS}" = "X0" ] ; then
+      su - "${SUDO_USER}" -c "cd ${SYSSVNROOT} && svn add ${SYSNAME}"
+      su - "${SUDO_USER}" -c "cd ${SYSSVNROOT} && svn add ${NEWSYSITEMS}"
+      su - "${SUDO_USER}" -c "cd ${SYSSVNROOT} && svn commit ${SYSNAME} -m \"sysupdate: initialized new system item\""
+     else
+      svn add ${SYSNAME}
+      svn add ${NEWSYSITEMS}		
+      svn commit ${SYSNAME} -m "sysupdate: initialized new system item"
+     fi
+    fi
+    cd ${SYSSVNROOT}/${SYSNAME}
+    MODDEDSYSITEMS=`svn st|grep "^M .*"`
+    if [ "X${MODDEDSYSITEMS}" != "X" ] ; then
+     if [ "X${SUDO_USER}" != "X" -a "X${USERTESTSTATUS}" = "X0" ] ; then
+      su - "${SUDO_USER}" -c "cd ${SYSSVNROOT}/${SYSNAME} && svn commit -m \"sysupdate: system info update\""
+     else
+      svn commit -m "sysupdate: system info update"
+     fi
+    fi
+    SYSINFOUPDATE=`printf "${SYSINFOUPDATE}\n${hostli}"|grep '.'`
+    RUNSUMMARY_D='yes'
+    FILTER=`printf "${FILTER}^${UPDATEHOST}:|"`
+#    /bin/sh -i
+    STATUS='0'
+   fi
+  fi
+ fi
+done
+
+if [ "X${STATUS}" = "X0" ] ; then
+ return "${STATUS}"
+else
+ return 1
+fi
+
+}
+
+finalizechanges()
+{
+
+OLDCKPOINT=`cat "${SYSINFOSNAP}"`
+FILTER=`echo "${FILTER}"|perl -p -e 's/\|$//g'`
+CLEANSNAP=`echo "${OLDCKPOINT}"|grep -v -E "(${FILTER})"`
+NEWSNAP=`printf "${CLEANSNAP}\n${SYSINFOUPDATE}"|grep '.'|sort -u`
+echo "${NEWSNAP}" |grep '^.*FOO.FOO.*:hostcksum:[0-9]*:[0-9]*$' >/dev/null
+NEWSNAPVALID="$?"
+
+if [ "X${NEWSNAPVALID}" = "X0" ] ; then
+ echo "${NEWSNAP}" >"${SYSINFOSNAP}"
+fi
+
+}
+
+
+updatesummaries()
+{
+if [ "X${RUNSUMMARY_D}" = "Xyes" ] ; then
+ for i in ${SUMMARY_D}/* ; do
+  echo "#### running ${i} ####"
+  . ${i}
+ done
+fi
+          
+    
+}
+
+
+
+##MAIN##
+main $@ >>${FETCHLOG} 2>&1
+
+

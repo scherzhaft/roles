@@ -1,0 +1,14 @@
+#!/bin/sh
+
+chown root:root /etc/default/admin-functions
+chmod 444 /etc/default/admin-functions
+if [ -f /etc/default/slack-functions ] ; then
+ . /etc/default/slack-functions
+fi
+
+if [ -f /etc/default/admin-functions ] ; then
+ . /etc/default/admin-functions
+fi
+SLACKROLE="${*}"
+
+slacksum "${SLACKROLE}"

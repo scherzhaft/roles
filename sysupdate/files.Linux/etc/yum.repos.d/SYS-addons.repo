@@ -1,0 +1,6 @@
+[SYS_addons]
+name=SYS Linux addons
+baseurl=http://%SHORTSUPPORT%/kickstart/updates/yum/SYSLinux
+gpgcheck=0
+enabled=0
+

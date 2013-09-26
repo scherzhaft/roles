@@ -1,0 +1,996 @@
+#!/bin/sh
+
+
+PATH=$PATH:/sbin:/bin:/usr/sfw/bin:/usr/sfw/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/opt/sfw/bin:/opt/sfw/sbin:/opt/csw/bin:/opt/csw/sbin
+
+OSNAME=`uname -s`
+OLDIFS="${IFS}"
+DATESTRING=`date +%m_%d_%Y_%H_%M_%S`
+
+__cleanup()
+{
+find /var/lib/slack/backups -type d  -mtime +14  -exec rm -rf {} \;
+
+find /var/cache/slack/roles -mtime +14 -name \*.zip -exec rm -rf {} \;
+
+mkdir -p /var/lib/slack/backups
+mkdir -p /var/cache/slack/roles
+
+}
+
+__ldapsearchhandler()
+{
+##__SEARCHPARAM="${1} ${2} ${3} ${4} ${5} ${6} ${7} ${8} ${9}"
+__SEARCHPARAM="${*}"
+__LDAPSEARCHTIMEOUT="20"
+if [ -z "${__SEARCHPARAM}" ] ; then
+ echo "Error in: \$__SEARCHPARAM"
+ echo "__SEARCHPARAM is null."
+ exit 1
+fi
+
+__MYLDAPSERVERLIST="${LDAPSERVER}"
+if [ -z "${__MYLDAPSERVERLIST}" ] ; then
+ if [ -f /etc/slack-slaper.conf ] ; then
+  __MYLDAPSERVERLIST=`grep "^SOURCE=\"ldap" /etc/slack-slaper.conf|awk -F= {'print $2'}|grep "ldap"|perl -p -e "s/ldaps\:\/\///g"|perl -p -e "s/ldap\:\/\///g"|perl -p -e "s/\///g"|perl -p -e "s/\"//g"`
+  if [ -z "${__MYLDAPSERVERLIST}" ] ; then
+   echo "Error in: \$__MYLDAPSERVERLIST"
+   echo "__MYLDAPSERVERLIST is null."
+   exit 1
+  fi
+ else
+  echo "Error in: \$__MYLDAPSERVERLIST"
+  echo "__MYLDAPSERVERLIST is null."
+  exit 1
+ fi
+fi
+
+__SSL=""
+if [ -n "${SSL}" ] ; then
+ __SSL="s"
+else
+ if [ -f /etc/slack-slaper.conf ] ; then
+  __SSLTEST=`cat /etc/slack-slaper.conf|grep "^SOURCE=\"ldaps\://"`
+  if [ -n "${__SSLTEST}" ] ; then
+   __SSL="s"
+  fi
+ fi
+fi
+
+__OSNAME="`uname -s`"
+case ${__OSNAME} in
+        Linux)
+ __LDAPSEARCH="/usr/bin/ldapsearch"
+        ;;
+        SunOS)
+ __LDAPSEARCH="/usr/local/bin/ldapsearch"
+        ;;
+            *)
+ echo "Error in: \$__OSNAME"
+ echo "unknown OS ${__OSNAME}"
+ exit 1
+esac
+
+if [ ! -f ${__LDAPSEARCH} -o ! -x ${__LDAPSEARCH} ] ; then
+ echo "Error in: \$__LDAPSEARCH"
+ echo "$__LDAPSEARCH is not a regular file and/or not executable"
+ exit 1
+fi
+
+
+__MYIPLIST=`ifconfig -a|grep -v "inet6"|grep "inet"|perl -p -e "s/addr\://%FOO%0.0"|perl -p -e "s|^10\.226|%FOO%|g"`
+__MYCLASSBEES="`echo "${__MYIPLIST}"|awk -F. {'print $1"."$2'}|sort|uniq`"
+for i in `echo "${__MYLDAPSERVERLIST}"` ; do
+ __LDAPSERVERSCLASSBEE="`echo "${i}"|awk -F. {'print $1"."$2'}`"
+ if echo "${__MYCLASSBEES}"|grep "${__LDAPSERVERSCLASSBEE}" >/dev/null ; then
+  __PREFERREDLDAP="${i}"
+  eval ${__LDAPSEARCH} -H ldap${__SSL}://"${__PREFERREDLDAP}" -x -o nettimeout="${__LDAPSEARCHTIMEOUT}" "${__SEARCHPARAM}"
+  __status=$?
+  if [ ${__status} = "0" ] ; then
+   return ${__status}
+  else
+   __MYLDAPSERVERLIST="`echo "${__MYLDAPSERVERLIST}"|perl -p -e "s/${i}//g"`"
+  fi
+ fi
+done
+for i in `echo "${__MYLDAPSERVERLIST}"` ; do
+ __FAILOVERLDAP="${i}"
+ eval ${__LDAPSEARCH} -H ldap${__SSL}://"${__FAILOVERLDAP}" -x -o nettimeout="${__LDAPSEARCHTIMEOUT}" "${__SEARCHPARAM}"
+ __status=$?
+ if [ ${__status} = "0" ] ; then
+  return ${__status}
+ fi
+done
+return ${__status}
+}
+
+
+slacksum()
+{
+SLACKROLE="$1"
+MANAGEDFILELIST="`echo "${2}"|perl -p -e "s/\,/\n/g"|sort|uniq`"
+if [ -z "${SLACKROLE}" ] ; then
+ echo "Error in: \$SLACKROLE."
+ echo "Unknown error: \$SLACKROLE may not be null."
+ return 1
+fi
+
+if [ ! -d /var/lib/slack/stage/roles/"${SLACKROLE}" ] ; then
+ echo "Error in: \$SLACKROLE."
+ echo "${SLACKROLE}: Role not found."
+ return 1
+fi
+
+if [ ! -d /var/lib/slack/stage/roles/"${SLACKROLE}"/files ] ; then
+ echo "Warning in: \$SLACKROLE."
+ echo "${SLACKROLE}: Role contains no ./files directory."
+ echo "slacksum can only cksum files that actually exist."
+ echo "If you want to cksum a file that is created or moddified from the slack scripts,"
+ echo "mkdir ./files in your slackrole"
+ echo "touch a empty placeholder file in ./files"
+ echo "Example: placeholder for script generated /etc/passwd"
+ echo
+ echo "cd ./${SLACKROLE}"
+ echo "mkdir ./files"
+ echo "cd ./files"
+ echo "mkdir ./etc"
+ echo "cd ./etc"
+ echo "touch ./passwd.slacksum"
+ echo
+return 0
+fi
+
+mkdir -p /var/lib/slack/slacksum/
+cat /dev/null > /var/lib/slack/slacksum/"${SLACKROLE}"
+cd /var/lib/slack/stage/roles/"${SLACKROLE}"/files
+FILELIST="`find . -type f`"
+cd /
+#unset MANAGEDFILELIST
+
+if [ -n "${FILELIST}" ] ; then
+ for i in `echo "${FILELIST}"` ; do
+  cksum ${i}|awk {'print $1" "$2" "$3'} >> /var/lib/slack/slacksum/"${SLACKROLE}"
+  FILE=`basename ${i}`
+  PLACEHOLDERTEST="`echo "${FILE}"|awk -F. {'print $NF'}`"
+ done
+fi
+
+if [ -n "${MANAGEDFILELIST}" ] ; then
+ cd /
+ for i in `echo "${MANAGEDFILELIST}"` ; do
+  cksum ${i}|awk {'print $1" "$2" "$3'}  >> /var/lib/slack/slacksum/"${SLACKROLE}"
+ done
+fi
+return 0
+}
+
+
+slacksumhandler()
+{
+PWD=`pwd`
+TEST="`echo "${PWD}" |grep "/var/lib/slack/stage/roles/"`"
+if [ -z "${TEST}" ] ; then
+ echo "Error in: \$PWD"
+ echo "Function slacksum() may only be called from a slackroles scripts."
+ return 1
+fi
+
+SLACKROLEDIR=`dirname "${TEST}"`
+SLACKROLE=`echo "${SLACKROLEDIR}" |perl -p -e "s/\/var\/lib\/slack\/stage\/roles//g"|awk {'print $1'}`
+SLACKROLE=`echo "${SLACKROLE}"|perl -p -e "s/\///g"`
+
+if [ -z "${SLACKROLE}" ] ; then
+ echo "Error in: \$SLACKROLE."
+ echo "Unknown error: \$SLACKROLE may not be null."
+ return 1
+fi
+
+echo "SLACKROLE=${SLACKROLE}"
+
+}
+
+yaamtbuildgroupfile()
+{
+##incase groupblob is aready set##
+##example : groupblob="foobar 9001"##
+
+if [ -z "${groupblob}" ] ; then
+ groupblob=`__ldapsearchhandler -b ou=group,${__LDAPDN} -LLL objectClass=posixGroup cn gidNumber`
+ STATUS=$?
+
+ if [ "${STATUS}" -ne "0" ] ; then
+  return ${STATUS}
+ fi
+fi
+
+groupblob=`echo "${groupblob}"|perl -p -e "s/\n//%FOO%'|sort|uniq|awk {'print $3" "$5'}`
+
+echo "${groupblob}"|while read line ; do
+ gid=`echo "${line}"|awk {'print $2'}`
+ groupname=`echo "${line}"|awk {'print $1'}`
+ DEFAULTGROUPTEST=`cat /etc/group|awk -F\: {'print $3'}|grep "^${gid}$"`
+ STATUS=$?
+ if [ "${STATUS}" -ne "0" ] ; then
+  echo "${groupname}::${gid}:" >> /etc/group
+ fi
+done
+
+}
+
+
+yaamtbuilduserupdate()
+{
+if [ -f %YAAMTCRED% ] ; then
+ PASS=%YAAMTCRED%
+ chmod 700 %YAAMTCRED%
+else
+ echo "Error in: \$PASS"
+ echo "%YAAMTCRED% file not found"
+ return 1
+fi
+
+if [ -z "${netgroups}" ] ; then
+ echo "Error in: \$netgroups"
+ echo "netgroup list is null"
+ echo "try "
+ echo
+ echo "export netgroups=\"netgroup1
+netgroup2
+netgroup3"
+ echo
+ echo "or"
+ echo
+ echo "export netgroups="\`"cat /etc/netgroups.yaamt"\`""
+ return 1
+fi
+
+SSLSTATUS=`grep "^SOURCE=\"ldaps\://%FOO%conf`
+STATUS=$?
+if [ "${STATUS}" -ne "0" ] ; then
+ echo "Error in: /etc/slack-slaper.conf"
+ echo "YAAMT require: SOURCE=\"ldaps://"
+ return 1
+fi
+
+for i in `echo "$netgroups"` ; do netgroupfilter=`printf "$netgroupfilter(cn=${i})"`;done
+
+netgroupmembers=`__ldapsearchhandler -b ou=netgroup,${__LDAPDN} '"(|${netgroupfilter})"'`
+STATUS=$?
+
+if [ "${STATUS}" -ne "0" ] ; then
+ return ${STATUS}
+fi
+
+netgroupmembers=`echo "${netgroupmembers}"|grep "^nisNetgroupTriple:"|awk {'print $2'}|awk -F, {'print $2'}|perl -p -e "s/^-.*\n//%FOO%'`
+
+for i in `echo "$netgroupmembers"` ; do userfilter=`printf "$userfilter(uid=${i})"`; done
+
+##pulltheusers passwd
+
+userhashes=`__ldapsearchhandler -b ou=people,${__LDAPDN} -D "cn=%USERPULLER%,ou=profile,${__LDAPDN}" -y "${PASS}" -LLL '"(|$userfilter)"' uid userpassword uidNumber gidNumber gecos homeDirectory loginShell pwdaccountlockedtime|perl -p -e "s/\n//%FOO%*\,dc\=%FOO//%FOO%'`
+
+STATUS=$?
+
+if [ "${STATUS}" -ne "0" ] ; then
+ return ${STATUS}
+fi
+
+userhashes=`echo "${userhashes}"|perl -p -e "s/\n//%FOO%*\,dc\=%FOO//%FOO%'`
+
+}
+
+yaamtvalidateuserhashes()
+{
+
+##validate userhashes
+if [ -z "${OLDIFS}" ] ; then
+ OLDIFS="${IFS}"
+fi
+
+IFS=,
+for line in `echo "${userhashes}"` ; do
+ fieldcount=`echo "${line}"|awk -F\: {'print NF'}`
+
+ if [ "${fieldcount}" -ne "7" ] ; then
+  continue
+ fi
+ userid=`echo "${line}"|awk -F\: {'print $1'}|grep -v " "`
+ passwd=`echo "${line}"|awk -F\: {'print $2'}|perl -MMIME::Base64 -ne 'print decode_base64($_) . "\n"'|grep -i "^{crypt}"`
+ uidnum=`echo "${line}"|awk -F\: {'print $3'}|grep -v " "`
+ gidnum=`echo "${line}"|awk -F\: {'print $4'}|grep -v " "`
+ gecos=`echo "${line}"|awk -F\: {'print $5'}`
+ homedir=`echo "${line}"|awk -F\: {'print $6'}|grep -v " "`
+ shell=`echo "${line}"|awk -F\: {'print $7'}|grep -v " "`
+
+ if [ -z "${userid}" -o -z "${passwd}" -o -z "${uidnum}" -o -z "${gidnum}" -o -z "${gecos}" -o -z "${homedir}" -o -z "${shell}" ] ; then
+  continue
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${userid}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -eq "0" ] ; then
+  continue
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${passwd}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -eq "0" ] ; then
+  continue
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${uidnum}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -ne "0" ] ; then
+  continue
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${gidnum}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -ne "0" ] ; then
+  continue
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${gecos}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -eq "0" ] ; then
+  continue
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${homedir}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -eq "0" ] ; then
+  continue
+ fi
+ DIR=`dirname "${homedir}"`
+ if [ ! -d "${DIR}" -a -n "${DIR}" ] ; then
+  mkdir -p "${DIR}"
+ fi
+
+ unset STATUS
+ test=`expr 2 \* "${shell}" 2>&1`
+ STATUS=$?
+ if [ "${STATUS}" -eq "0" ] ; then
+  continue
+ fi
+ if cat /etc/shells|grep "${shell}" >/dev/null; then
+  shell="${shell}"
+ else
+  shell="/bin/bash" 
+ fi
+ passwd=`echo "${passwd}"|perl -p -e 's/{.*}//g'|perl -p -e "s/\n//g"`
+ gecos=`echo "##YAAMT MANAGED## "|perl -p -e "s/\n//g";echo "${gecos}"|perl -p -e "s/\n//g"`
+ ldapupdates="`echo "${ldapupdates}"|grep '.';echo "${userid}:${passwd}:${uidnum}:${gidnum}:${gecos}:${homedir}:${shell}"`"
+done
+IFS="${OLDIFS}"
+
+if [ -z "${ldapupdates}" ] ; then
+ return 1
+fi
+
+}
+
+yaamtupdateuseraccounts()
+{
+if [ -z "${ldapupdates}" ] ; then
+ return 1
+fi
+
+pwconv
+STATUS=$?
+if [ "${STATUS}" -ne "0" ] ; then
+ echo "Your /etc/passwd, and/or /etc/shadow have pre-existing syntax issues."
+ echo "cowardly refusing to update..."
+ return ${STATUS}
+fi
+
+
+CURRYAAMTPASSWD=`grep "YAAMT MANAGED" /etc/passwd|sort`
+CURRYAAMTUSERS=`echo "${CURRYAAMTPASSWD}"|awk -F\: {'print $1'}|grep '.'`
+CURRYAAMTFILTER=`echo "${CURRYAAMTUSERS}"|perl -p -e "s/^/\|\^/g;s/\n//g"|perl -p -e "s/^\|//g"`
+CURRYAAMTSHADOW=`grep -E -- "(${CURRYAAMTFILTER})" /etc/shadow|sort`
+CURRYAAMTPASSSUM=`echo "${CURRYAAMTPASSWD}"|sort|cksum - |awk {'print $1" "$2'}`
+CURRYAAMTSHADSUM=`echo "${CURRYAAMTSHADOW}"|sort|cksum - |awk {'print $1" "$2'}`
+RMUSERLIST=`grep "YAAMT MANAGED" /etc/passwd|awk -F\: {'print $1'}|grep '.';echo "${ldapupdates}"|awk -F\: {'print $1'}|grep '.'`
+RMUSERLIST=`echo "${RMUSERLIST}"|sort|uniq|grep '.'`
+PLUSNETGROUPS=`grep "^\+@" /etc/passwd`
+MINUSNETGROUPS=`grep -- "^-" /etc/passwd`
+passwdupdates=`echo "${ldapupdates}"|sort|awk -F\: {'print $1":x:"$3":"$4":"$5":"$6":"$7'}`
+passupdatesum=`echo "${passwdupdates}"|sort|cksum - |awk {'print $1" "$2'}`
+shadowupdate=`echo "${ldapupdates}"|sort|awk -F\: {'print $1":"$2":::::::"'}`
+shadupdatesum=`echo "${shadowupdate}"|sort|cksum - |awk {'print $1" "$2'}`
+
+if [ "${shadupdatesum}" = "${CURRYAAMTSHADSUM}" -a "${passupdatesum}" = "${CURRYAAMTPASSSUM}" ] ; then
+ echo "No changes from last run.  Nothing to do."
+ return 10
+fi
+
+umask 077
+
+cp /etc/passwd /etc/passwd.yaamt.${DATESTRING}$$
+cp /etc/shadow /etc/shadow.yaamt.${DATESTRING}$$
+
+echo
+echo "The following user accounts will be sync'd to ldap."
+echo
+echo "${RMUSERLIST}"
+echo
+
+RMUSERFILTER=`echo "${RMUSERLIST}"|perl -p -e "s/^/\^/g;s/\n/\|/g";printf "^\+@|^-"`
+echo "${RMUSERFILTER}"
+
+
+
+cat /etc/passwd.yaamt.${DATESTRING}$$|grep -v -E -- "(${RMUSERFILTER})" > /etc/passwd
+cat /etc/shadow.yaamt.${DATESTRING}$$|grep -v -E -- "(${RMUSERFILTER})" > /etc/shadow
+
+echo "${passwdupdates}" >> /etc/passwd
+echo "${shadowupdate}" >> /etc/shadow
+
+if [ -n "${PLUSNETGROUPS}" ] ; then
+ echo "${PLUSNETGROUPS}" >> /etc/passwd
+fi
+if [ -n "${MINUSNETGROUPS}" ] ; then
+ echo "${MINUSNETGROUPS}" >> /etc/passwd
+fi
+
+}
+
+yaamtverifyaccountdb()
+{
+
+pwconv
+STATUS=$?
+if [ "${STATUS}" -ne "0" ] ; then
+ cat /etc/passwd.yaamt.${DATESTRING}$$ > /etc/passwd
+ cat /etc/shadow.yaamt.${DATESTRING}$$ > /etc/shadow
+ cd /etc
+ zip -mqT passwd.shadow.backups.zip passwd.yaamt.* shadow.yaamt.*
+ return ${STATUS}
+else
+ cd /etc
+ zip -mqT passwd.shadow.backups.zip passwd.yaamt.* shadow.yaamt.*
+ if [ "${OSNAME}" = "SunOS" ] ; then
+  if [ -f /usr/lib/security/pam_mkhomedir.so.1 ] ; then
+   PAMFILE=`basename /usr/lib/security/pam_mkhomedir.so.1`
+   if cat /etc/pam.conf|grep "${PAMFILE}" >/dev/null ; then
+    return 0
+   else
+    echo "other   session required        pam_mkhomedir.so.1      umask=0027" >> /etc/pam.conf
+   fi
+  else
+   echo "YAAMT requires pam_mkhomedir.so.1, user homedirs won't be autocreated until this is installed."
+   return 1
+  fi
+ elif [ "${OSNAME}" = "Linux" ] ; then
+  if [ -f /lib/security/pam_mkhomedir.so ] ; then
+   PAMFILE=`basename /lib/security/pam_mkhomedir.so`
+   if cat /etc/pam.d/system-auth|grep "${PAMFILE}" >/dev/null ; then
+    return 0
+   else
+    echo "session     required      pam_mkhomedir.so skel=/etc/skel/ umask=0022" >> /etc/pam.d/system-auth
+   fi
+  else
+   echo "YAAMT requires pam_mkhomedir.so, user homedirs won't be autocreated until this is installed."
+   return 1
+  fi 
+ fi
+fi
+}
+
+fixfiler()
+{
+test "X${1}" = "X" && return 1
+SLACKROLE="$1"
+test "X${__HOSTNAME}" = "X" -o "X${__HOSTSHORT}" = "X" -o "X${__DNSDOMAIN}" = "X" -o "X${__SITE}" = "X" -o "X${__SUPPORT}" = "X" -o "X${__SHORTSUPPORT}" = "X" -o "X${__MYCLASSBEES}" = "X" && . /etc/default/SYSconstants
+MYCLASSB=`echo "${__MYCLASSBEES}"|head -1`
+
+cd /var/lib/slack/stage/roles/"${SLACKROLE}"/files || return 3 
+test "X${__HOSTNAME}" != "X" && find . -type f -exec perl -p -i -e "s|%HOSTNAME%|${__HOSTNAME}|g" {} \;
+test "X${__HOSTSHORT}" != "X" && find . -type f -exec perl -p -i -e "s|%HOSTSHORT%|${__HOSTSHORT}|g" {} \;
+test "X${__DNSDOMAIN}" != "X" && find . -type f -exec perl -p -i -e "s|%DNSDOMAIN%|${__DNSDOMAIN}|g" {} \;
+test "X${__SITE}" != "X" && find . -type f -exec perl -p -i -e "s|%SITE%|${__SITE}|g" {} \;
+test "X${__SUPPORT}" != "X" && find . -type f -exec perl -p -i -e "s|%SUPPORT%|${__SUPPORT}|g" {} \;
+test "X${__SHORTSUPPORT}" != "X" && find . -type f -exec perl -p -i -e "s|%SHORTSUPPORT%|${__SHORTSUPPORT}|g" {} \;
+test "X${MYCLASSB}" != "X" && find . -type f -exec perl -p -i -e "s|%MYCLASSB%|${MYCLASSB}|g" {} \;
+test "X${BASEDIR}" != "X" && find * -type f -exec perl -p -i -e "s|%BASEDIR%|${BASEDIR}|g" {} \;
+
+echo "${__SITEMATRIX}"|while read sitematrixli ; do
+  liclassb=`echo "${sitematrixli}"|awk -F\| {'print $1'}`
+  lisite=`echo "${sitematrixli}"|awk -F\| {'print $2'}`
+  test "X${liclassb}" != "X" -a "X${lisite}" != "X" && find . -type f -exec perl -p -i -e "s|%${lisite}CLASSB%|${liclassb}|g" {} \;
+done
+
+chown -R root:bin * .??*
+chmod -R 755 * .??*
+for i in `find . -name "*.kodak"` ; do
+  SRC="$i"
+  DEST=`echo "${i}"|sed -e 's/.kodak//g'`
+  cat "${SRC}" > "${DEST}"
+done
+
+##if [ "X${__HOSTSHORT}" != "X" ] ; then
+##  for i in `find * -name *%HOSTSHORT%*` ; do
+##    src="${i}"
+##    dest=`echo "${src}"|sed -e "s|%HOSTSHORT%|${__HOSTSHORT}|g"`
+##    mv "${src}" "${dest}"
+##  done
+##fi
+##
+##if [ "X${__HOSTNAME}" != "X" ] ; then
+##  for i in `find * -name *%HOSTNAME%*` ; do
+##    src="${i}"
+##    dest=`echo "${src}"|sed -e "s|%HOSTNAME%|${__HOSTNAME}|g"`
+##    mv "${src}" "${dest}"
+##  done
+##fi
+
+}
+
+disableSysupdaterepos()
+{
+SYSRepos=`ls -d /etc/yum.repos.d/sysupdate.repo`
+test "X${SYSRepos}" != "X" && perl -p -i -e "s|^enabled=*.*$|enabled=0|g" ${SYSRepos}
+}
+
+enableSysupdaterepos()
+{
+SYSRepos=`ls -d /etc/yum.repos.d/sysupdate.repo`
+test "X${SYSRepos}" != "X" && perl -p -i -e "s|^enabled=*.*$|enabled=1|g" ${SYSRepos}
+}
+
+enableALLrepos()
+{
+ALLRepos=`ls -d /etc/yum.repos.d/*`
+test "X${ALLRepos}" != "X" && perl -p -i -e "s|^enabled=*.*$|enabled=1|g" ${ALLRepos}
+}
+
+disableALLrepos()
+{
+ALLRepos=`ls -d /etc/yum.repos.d/*`
+test "X${ALLRepos}" != "X" && perl -p -i -e "s|^enabled=*.*$|enabled=0|g" ${ALLRepos}
+}
+
+disableSiterepos()
+{
+siteRepos=`ls -d /etc/yum.repos.d/OPS-addons.repo /etc/yum.repos.d/other.distros.sysupdate.repo /etc/yum.repos.d/sysupdate.repo`
+test "X${siteRepos}" != "X" && perl -p -i -e "s|^enabled=*.*$|enabled=0|g" ${siteRepos}
+}
+
+enableSiterepos()
+{
+siteRepos=`ls -d /etc/yum.repos.d/OPS-addons.repo /etc/yum.repos.d/other.distros.sysupdate.repo /etc/yum.repos.d/sysupdate.repo`
+test "X${siteRepos}" != "X" && perl -p -i -e "s|^enabled=*.*$|enabled=1|g" ${siteRepos}
+}
+ 
+enableOPSLinuxrepo()
+{ 
+test -f /etc/yum.repos.d/OPS-addons.repo && perl -p -i -e "s|^enabled=*.*$|enabled=1|g" /etc/yum.repos.d/OPS-addons.repo
+}
+
+disableOPSLinuxrepo()
+{
+test -f /etc/yum.repos.d/OPS-addons.repo && perl -p -i -e "s|^enabled=*.*$|enabled=0|g" /etc/yum.repos.d/OPS-addons.repo
+}
+
+enableOtherDistrorepo()
+{ 
+test -f /etc/yum.repos.d/other.distros.sysupdate.repo && perl -p -i -e "s|^enabled=*.*$|enabled=1|g" /etc/yum.repos.d/other.distros.sysupdate.repo
+}
+
+disableOtherDistrorepo()
+{
+test -f /etc/yum.repos.d/other.distros.sysupdate.repo && perl -p -i -e "s|^enabled=*.*$|enabled=0|g" /etc/yum.repos.d/other.distros.sysupdate.repo
+}
+
+repoLinux()
+{
+ARGS="${*}"
+ACTION=`echo "${ARGS}"|awk -F\. {'print $1'}` 
+MYPKG=`echo "${ARGS}"|awk -F\. {'print $2'}|sed -e "s/,$//g"|perl -p -e "s/,/\n/g"`
+##MYPKGF=`echo "${ARGS}"|awk -F\. {'print $2'}|perl -p -e "s/,/\n/g"`
+##MYPKGF=`echo "${MYPKGF}"|grep '.'`
+##CURRINST=`rpm -qa --queryformat '%{NAME}\n'`
+##ALREADYINST=`echo "${CURRINST}"|grep -F "${MYPKGF}"`
+checkrpmstatus()
+{
+NOTINST=`rpm -q --queryformat '%{NAME}\n' ${MYPKG}|grep "^package .* is not installed$"|awk {'print $2'}`
+if [ "X${ACTION}" = "Xinstall" ] ; then
+  MYPKG="${NOTINST}"
+  if [ "X${NOTINST}" = "X" ] ; then
+    echo "#### ALREADY INSTALLED ####"
+    return 0
+  else
+    CURRPKGSTATE='2'
+  fi
+fi
+}
+
+if [ "X${MYPKG}" != "X" ] ; then
+  checkrpmstatus
+fi
+
+if [ "X${ACTION}" = "Xupgrade" -o "X${ACTION}" = "Xupdate" ] ; then
+  CURRPKGSTATE='2'
+fi
+
+if [ "X${ACTION}" != "Xupgrade" -a "X${ACTION}" != "Xinstall" -a "X${ACTION}" != "Xupdate" -o "X${MYPKG}" = "X" ] ; then
+  ACTION=""
+  MYPKG=""
+  CURRPKGSTATE='0'
+fi
+
+##set +x
+if [ "X${CURRPKGSTATE}" = "X2" -a "X${MYPKG}" != "X" ] ; then
+  if [ "X${ACTION}" = "Xupgrade" -o "X${ACTION}" = "Xupdate" -o "X${ACTION}" = "Xinstall" -a "X${MYPKG}" != "X" ] ; then
+    enableALLrepos
+    /usr/bin/yum clean all
+
+    disableALLrepos
+    enableSysupdaterepos
+    echo "#### TRYING SYSUPDATE ####"
+    SYSUPDATELIST=`/usr/bin/yum list available ${MYPKG}`
+    INSYSUPDATE="$?"
+    echo "${SYSUPDATELIST}"|awk -F. {'print $1'}|grep -F "${MYPKG}"
+    INSYSUPDATE="${INSYSUPDATE}${?}"
+
+    if [ "X${INSYSUPDATE}" = "X00" ] ; then
+      echo "#### PULLING FROM SYSUPDATE ####"
+      if [ "X${NOTINST}" = "X" ] ; then
+        /usr/bin/yum -y install $MYPKG
+      else
+        /usr/bin/yum -y install $NOTINST
+        if [ "X${ACTION}" = "Xupgrade" -o "X${ACTION}" = "Xupdate" ] ; then
+          /usr/bin/yum -y update $MYPKG
+        fi
+      fi
+        
+      return 0
+    fi
+
+    enableSysupdaterepos
+    enableOPSLinuxrepo
+    echo "#### TRYING OPSADDONS ####"
+    OPSADDONSLIST=`/usr/bin/yum list available ${MYPKG}`
+    INOPSADDONS="$?"
+    echo "${OPSADDONSLIST}"|awk -F. {'print $1'}|grep -F "${MYPKG}"
+    INOPSADDONS="${INOPSADDONS}${?}"
+
+    if [ "X${INOPSADDONS}" = "X00" ] ; then
+      echo "#### PULLING FROM OPSADDONS ####"
+      if [ "X${NOTINST}" = "X" ] ; then
+        /usr/bin/yum -y install $MYPKG
+      else
+        /usr/bin/yum -y install $NOTINST
+        if [ "X${ACTION}" = "Xupgrade" -o "X${ACTION}" = "Xupdate" ] ; then
+          /usr/bin/yum -y update $MYPKG
+        fi
+      fi
+        
+      disableOPSLinuxrepo
+      return 0
+    fi
+
+    if [ "X${NOTINST}" != "X" ] ; then
+      enableSysupdaterepos
+      enableOPSLinuxrepo
+      enableOtherDistrorepo
+      echo "#### TRYING OTHERDISTROS ####"
+      OTHERDISTROSLIST=`/usr/bin/yum list available ${MYPKG}`
+      INOTHERDISTROS="$?"
+      echo "${OTHERDISTROSLIST}"|awk -F. {'print $1'}|grep -F "${MYPKG}"
+      INOTHERDISTROS="${INOTHERDISTROS}${?}"
+
+      if [ "X${INOTHERDISTROS}" = "X00" ] ; then
+        echo "#### PULLING FROM OTHERDISTROS ####"
+        /usr/bin/yum -y install $NOTINST
+      fi
+
+      disableOPSLinuxrepo
+      disableOtherDistrorepo
+      return 0
+    fi
+
+    echo "PKG NOT FOUND...doing nothing"
+    disableOPSLinuxrepo
+    disableOtherDistrorepo
+    return 0
+
+  fi
+
+fi
+
+}
+
+mkresp()
+{
+test "X${PKGARGS}" != "X" && mkdir -p "${SCRIPTDIR}/roles/mypkgask/files/var/pkg-get/pkgask"
+test "X${PKGARGS}" != "X" && echo "${PKGARGS}" > "${SCRIPTDIR}/roles/mypkgask/files/var/pkg-get/pkgask/${RESPONCE}"
+}
+
+repo()
+{
+test "X${__OSNAME}" = "X" && . /etc/default/SYSconstants
+test "X${__OSNAME}" = "X" && return 1
+mkresp
+firstprep
+eval "repo${__OSNAME} ${*}"
+return $?
+}
+
+repoSunOS()
+{
+ARGS="${*}"
+ACTION=`echo "${ARGS}"|awk -F\. {'print $1'}` 
+MYPKG=`echo "${ARGS}"|awk -F\. {'print $2'}|sed -e "s/,/ /g"`
+PGETFLAGS='-f -u '
+LS='/usr/bin/ls'
+CWD=`pwd`
+##set -x
+if [ "X${MYPKG}" != "X" -a -f "${LS}" ] ; then
+  cd /var/sadm/pkg || return 9
+  INST=`set +x ;(${LS} -d ${MYPKG} >/dev/null) 2>&1|grep ":"|awk -F\: {'print $1'}`
+  INST=`echo ${INST}`
+##  echo "${INST}" > /tmp/INST
+##  return 11
+  if [ "X${ACTION}" = "Xinstall" ] ; then
+    MYPKG="${INST}"
+    if [ "X${INST}" = "X" ] ; then
+      cd ${CWD}
+      rm -rf /var/pkg-get/pkgask
+      return 0
+    else
+      CURRPKGSTATE='2'
+    fi
+  fi
+fi
+
+if [ "X${ACTION}" = "Xupgrade" -o "X${ACTION}" = "Xupdate" ] ; then
+  CURRPKGSTATE='2'
+fi
+
+if [ "X${ACTION}" != "Xupgrade" -a "X${ACTION}" != "Xinstall" -a "X${ACTION}" != "Xupdate" -o "X${MYPKG}" = "X" ] ; then
+  PGETFLAGS=""
+  ACTION=""
+  MYPKG=""
+  CURRPKGSTATE='0'
+fi
+
+##set +x
+
+
+
+if [ "X${CURRPKGSTATE}" = "X2" ] ; then
+  cd /
+  /usr/bin/pkg-get -U
+  /usr/bin/pkg-get $PGETFLAGS $MYPKG
+  cd ${CWD}
+  rm -rf /var/pkg-get/pkgask
+  return 0
+fi
+
+rm -rf /var/pkg-get/pkgask
+
+}
+
+firstprep()
+{
+FIRSTROLES=''
+test "X${SCRIPTDIR}" != "X" && FIRSTROLES=`ls ${SCRIPTDIR}/roles|sort -u|grep -v "\.svn"|grep '.'`
+
+for frole in ${FIRSTROLES} ; do
+  if [ -d "${SCRIPTDIR}/roles/${frole}" ] ; then
+    rm -rf /var/lib/slack/stage/roles/${frole}*
+    /usr/sbin/slack --no-sync --cache ${SCRIPTDIR} ${frole}
+  fi
+done
+
+}
+
+
+mktracker()
+{
+. /etc/default/SYSconstants
+test "X${__OSNAME}" = "X" && return 1
+
+CWD=`pwd`
+test "X${NAME}" = "X" && return 1
+PKGNAME="TRK${NAME}"
+test "X${__ARCH}" = "X" && return 4
+ARCH="${__ARCH}"
+VERSION=`__getrev`
+test "X${VERSION}" = "X" && return 6
+test "X${__SUDO_USER_MAIL}" = "X" && __SUDO_USER_MAIL="un-attended@install"
+EMAIL="${__SUDO_USER_MAIL}"
+test "X${__RELEASE}" = "X" && return 11
+RELEASE="${__RELEASE}"
+
+test "X${DESC}" = "X" && return 10
+TWORK="/var/tmp/tracker$$"
+TSTAGE="${TWORK}/stage$$"
+eval "mktracker${__OSNAME} ${*}"
+return $?
+}
+
+
+mktrackerLinux()
+{
+
+rm -rf  "${TSTAGE}"
+mkdir -p "${TSTAGE}" || return 12
+mkdir -p "${TWORK}/BUILD" || return 12
+mkdir -p "${TWORK}/BUILDROOT" || return 12
+mkdir -p "${TWORK}/RPMS/noarch" || return 12
+mkdir -p "${TWORK}/SOURCES" || return 12
+mkdir -p "${TWORK}/SPECS" || return 12
+mkdir -p "${TWORK}/RPM_TMP" || return 12
+
+REL='1'
+
+
+SPECTEMPLATE="Name:            ${PKGNAME}
+Version:        ${VERSION}
+Release:        ${REL}
+Summary:        ${NAME}
+License:        NA
+Group:          Applications/Engineering
+Packager:       ${EMAIL}
+URL:            https://%FOO%%FOO%.%FOO%%FOO%/foo/foo/foo/foo
+Buildroot:      ${TSTAGE}
+BuildArch:      noarch
+%define  _topdir                ${TWORK}
+%define  _tmppath               ${TWORK}/RPM_TMP
+%prep
+%build
+%install
+%clean
+%files
+%defattr (-,root,bin)
+%pre
+%post
+%preun
+%postun
+%description
+${DESC}"
+
+
+echo "${SPECTEMPLATE}" > ${TWORK}/SPECS/${PKGNAME}-${VERSION}-${REL}.spec
+repo install.rpm-build
+rpmbuild -bb ${TWORK}/SPECS/${PKGNAME}-${VERSION}-${REL}.spec || return 13
+rpm -Uvh ${TWORK}/RPMS/noarch/${PKGNAME}-${VERSION}-${REL}.noarch.rpm || return 14
+rm -rf ${TWORK}
+}
+
+
+
+mktrackerSunOS()
+{
+TSTREAM="${TWORK}/stream/${ARCH}/${RELEASE}"
+rm -rf  "${TSTAGE}"
+mkdir -p "${TSTAGE}" || return 12
+mkdir -p "${TSTREAM}" || return 13
+
+
+PKGINFOTEMPLATE="PKG=${PKGNAME}
+NAME=${NAME}
+ARCH=${ARCH}
+CATEGORY=application
+VERSION=${VERSION}
+BASEDIR=/
+HOTLINE=https://%FOO%%FOO%.%FOO%%FOO%/foo/foo/foo/foo
+EMAIL=${EMAIL}
+SUNW_PKG_THISZONE=true
+DESC=${DESC}
+CLASSES=none"
+
+echo "${PKGINFOTEMPLATE}" > ${TSTAGE}/pkginfo
+touch ${TSTAGE}/depend
+echo "i pkginfo" > ${TSTAGE}/prototype
+echo "i depend" >> ${TSTAGE}/prototype
+
+cd "${TSTAGE}"
+pkgmk -r .,/ -o -d ..
+cd ..
+pkgtrans -s . "${TSTREAM}/${PKGNAME}-${VERSION}-${ARCH}.pkg" ${PKGNAME}
+cp /usr/sbin/pkg-get-helper ${TSTREAM}
+cd ${TSTREAM}
+chmod 755 pkg-get-helper
+./pkg-get-helper
+echo "${TSTREAM}/${PKGNAME}-${VERSION}-${ARCH}.pkg"
+cd "${CWD}"
+pkg-get -s file://${TWORK}/stream -U
+pkg-get -s file://${TWORK}/stream -f -u ${PKGNAME}
+rm -rf ${TWORK}
+}
+
+appload()
+{
+if [ "X${SUBROLEACTION}" != "X" -a "X${PKGS}" != "X" -a "X${SCRIPTDIR}" != "X" ] ; then
+  ##firstprep
+  repo ${SUBROLEACTION}.${PKGS}
+  ##rm -rf /var/pkg-get/pkgask
+fi
+}
+
+flag4restart()
+{
+RESTARTER="${*}"
+if [ "X${SCRIPTDIR}" != "X" -a "X${RESTARTER}" != "X" ] ; then
+  mkdir -p "${SCRIPTDIR}/restart.d"
+  echo '#!/bin/bash
+
+'"${RESTARTER}" > "${SCRIPTDIR}/restart.d/`__getepoc`"
+sleep 2
+fi
+
+}
+
+rm_pkgs()
+{
+test "X${__OSNAME}" = "X" && . /etc/default/SYSconstants
+test "X${__OSNAME}" = "X" && return 1
+MYRMPKGS=`echo "$@"|sed -e "s/\,/ /g"` ; test "X${MYRMPKGS}" = "X" && return 1
+eval "rm_pkgs${__OSNAME} ${MYRMPKGS}"
+return $?
+}
+
+rm_pkgsLinux()
+{
+test "X${*}" = "X" && return 1
+MYCURRPKGS=`rpm -q --queryformat '%{NAME}\n' ${*}|grep -v "^package .* is not installed$"|awk {'print $1'}` ; test "X${MYCURRPKGS}" = "X" && return 2
+test "X${MYCURRPKGS}" != X && rpm -e "${MYCURRPKGS}"
+}
+
+
+rm_pkgsSunOS()
+{
+test "X${*}" = "X" && return 1
+MYCURRPKGS=`cd /var/sadm/pkg && ls -d ${*} 2>/dev/null|awk -F: {'print $1'}` ; test "X${MYCURRPKGS}" = "X" && return 2
+test "X${MYCURRPKGS}" != X && /usr/sbin/pkgrm -M -n -a /var/pkg-get/admin ${MYCURRPKGS}
+}
+
+apppatch()
+{
+if [ "X${PATCHES}" != "X" ] ; then
+  /opt/OPSpca-client/pca -X /opt/OPSpca-client -y -i ${PATCHES}
+  ## pca
+  /opt/OPSpca-client/pca -X /opt/OPSpca-client -y -i missingrs
+  ## re-try map patches
+  /opt/OPSpca-client/pca -X /opt/OPSpca-client -y -i ${PATCHES}
+  ## re-pca
+  /opt/OPSpca-client/pca -X /opt/OPSpca-client -y -i missingrs
+fi
+}
+
+roleusage()
+{
+if [ "X${ROLE}" != "X" ] ; then
+  echo
+  echo
+  echo "################################################################################"
+  echo "################################################################################" 
+  if [ "X${TRACKER}" != "X1" ] ; then
+    echo "##  usage: ${ROLE}.re-install         ## removes then re-installs     "
+  else
+    echo "##  usage: ${ROLE}.install            ## new install                  "
+  fi
+  echo "##  usage: ${ROLE}.install.missing    ## install missing pkgs/configs "
+  echo "##  usage: ${ROLE}.update             ## update everything            "
+  echo "##  usage: ${ROLE}.remove             ## remove packages              "
+  if [ "X${PATCHES}" != "X" ] ; then
+    echo "##  usage: ${ROLE}.apppatch           ## install just patches         "
+  fi
+  echo "##  usage: ${ROLE}.config             ## install just configs         "
+  echo "##  usage: ${ROLE}.apploadinstall     ## install missing packages     "
+  echo "##  usage: ${ROLE}.apploadupdate      ## update just packages         "
+  echo "################################################################################"
+  echo "################################################################################" 
+  echo
+fi
+}
+

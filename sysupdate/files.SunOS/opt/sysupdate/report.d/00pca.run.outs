@@ -1,0 +1,5 @@
+#!/bin/bash
+
+PCAOUTS=`/usr/bin/ls -d ${PCACLIENT}/pca.out.*|grep -v "2011"`
+test "X${PCAOUTS}" != "X" && cp ${PCAOUTS} ${SPOOL}
+

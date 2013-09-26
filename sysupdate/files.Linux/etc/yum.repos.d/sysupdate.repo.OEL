@@ -1,0 +1,13 @@
+
+[OEL_sysupdate_latest]
+name=Enterprise Linux $releasever - $basearch - sysupdate - latest
+baseurl=http://%SHORTSUPPORT%/kickstart/updates/yum/EnterpriseLinux/EL$releasever/latest/$basearch/
+gpgcheck=0
+enabled=1
+
+[OEL_sysupdate_addons]
+name=Enterprise Linux $releasever - $basearch - sysupdate - addons
+baseurl=http://%SHORTSUPPORT%/kickstart/updates/yum/EnterpriseLinux/EL$releasever/addons/$basearch/
+gpgcheck=0
+enabled=0
+

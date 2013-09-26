@@ -1,0 +1,884 @@
+#!/bin/sh
+
+export SUDO_USER
+PATH=$PATH:/usr/sfw/bin:/usr/sfw/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/opt/sfw/bin:/opt/sfw/sbin:/opt/csw/bin:/opt/csw/sbin
+## Import config files variables or DIE
+#echo Content-type: text/plain
+echo "Content-type: application/zip"
+echo
+
+CONF="/etc/slack-slaper.conf"
+if [ -f ${CONF} ] ; then
+ . ${CONF}
+ if [ $? -ne 0 ] ; then
+  echo "Error in ${CONF}."
+  exit
+ fi
+else
+ echo "Error ${CONF} not found."
+ exit
+fi 
+
+if [ -f ./slack-slaper.conf ] ; then
+ . ./slack-slaper.conf
+ if [ $? -ne 0 ] ; then
+  echo "Error in ./slack-slaper.conf."
+  exit
+ fi
+fi
+
+if [ -f ./slack-slaper.conf.SIPR ] ; then
+ . ./slack-slaper.conf.SIPR
+ if [ $? -ne 0 ] ; then
+  echo "Error in ./slack-slaper.conf.SIPR"
+  exit
+ fi
+fi
+
+##HOSTNAME="`hostname`"
+
+if [ -f /etc/default/admin-functions ] ; then
+ . /etc/default/admin-functions
+
+  if [ "${__OSNAME}" = "SunOS" ] ; then
+   grep '^root:.*:[0-9].*::::::$' /etc/shadow >/dev/null 2>&1
+   ROOTSTATUS="$?"
+   if [ "X${ROOTSTATUS}" != "X0" ] ; then
+    pwagingargs="-x -1"
+    passwd ${pwagingargs} root >/dev/null 2>/dev/null < /dev/null
+   fi
+  elif [ "${__OSNAME}" = "Linux" ] ; then
+   grep '^root:.*:[0-9].*:[0-9].*:99999:[0-9].*:::$' /etc/shadow >/dev/null 2>&1
+   ROOTSTATUS="$?"
+   if [ "X${ROOTSTATUS}" != "X0" ] ; then
+    pwagingargs="-x 99999"
+    passwd ${pwagingargs} root >/dev/null 2>/dev/null < /dev/null
+   fi
+  fi
+
+ __whichsiteanddomainami >/dev/null
+ if [ -z "$__SITE" ] ; then
+  echo "Warning in: \$__SITE"
+  echo "Unable to determine datacenter."
+ fi
+fi
+
+if [ -f /etc/default/slack-functions ] ; then
+ . /etc/default/slack-functions
+else
+ echo "Error in library: /etc/default/slack-functions"
+ echo "File not found"
+ exit 1
+fi
+
+usage()
+{
+FILENAME=`basename $0`
+ echo "Usage: ${FILENAME} LIST              -    List all available config roles."
+ echo "Usage: ${FILENAME} %slackrole LIST   -    List specified config role."
+ echo "Usage: ${FILENAME} %slackrole        -    Downloads specified config role."
+ echo "Usage: ${FILENAME} --rolelist	    -    List of rolelists."
+ echo "Usage: ${FILENAME} --rolelist.run - Run all roles in specified rolelists."
+}
+
+ARGS=$*
+if [ -z "${ARGS}" ] ; then
+ usage
+ exit
+fi
+
+#if [ -f /tmp/ldapsearch-data* ] ; then
+ rm -rf /tmp/ldapsearch-data*
+#fi
+
+OSNAME="`uname -s`"
+case ${OSNAME} in
+	Linux)
+ LDAPSEARCH="/usr/bin/ldapsearch"
+	;;
+	SunOS)
+ LDAPSEARCH="/usr/local/bin/ldapsearch"
+	;;
+	    *)
+ echo "Error in: \$OSNAME"
+ echo "unknown OS ${OSNAME}"
+ exit 1
+esac
+
+if [ ! -f ${LDAPSEARCH} -o ! -x ${LDAPSEARCH} ] ; then
+ echo "Error in: \$LDAPSEARCH"
+ echo "$LDAPSEARCH is not a regular file and/or not executable"
+ exit 1
+fi
+
+
+DATESTRING=`date +%m_%d_%Y_%H_%M_%S`
+SSL=`echo "${SOURCE}"|grep "^ldaps\://"`
+LDAPSERVER=`echo "${SOURCE}"|grep "^ldap"|perl -p -e "s/\#.*//g;s/ldaps\:\/\///g;s/ldap\:\/\///g;s/\///g"`
+WEBSERVER=`echo "${SOURCE}"|grep "^http"|perl -p -e "s/\#.*//g"`
+PROTO="`echo ${SOURCE}|awk -F: {'print $1'}`"
+ARGS=$*
+WEBARGS=`echo $*|perl -p -e "s/ /\%20/g"`
+if [ ! -d /var/cache/slack/roles/ ] ; then mkdir -p /var/cache/slack/roles/ ; fi
+touch /var/cache/slack/roles/test
+#LOCALROLELIST=`file /var/cache/slack/roles/*|grep -i zip|awk {'print $1'}|sed  -e "s/\://g"`
+if [ ! -d /var/lib/slack/logs ] ; then mkdir -p /var/lib/slack/logs ; fi
+
+FILENAME=`basename $0`
+
+customecho()
+{
+MESG=$1
+if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+ echo "${MESG}" > /dev/null
+ return 0
+else
+ echo "${MESG}"
+ return 0
+fi
+}
+
+
+
+
+
+pullfromldap()
+{
+FOUND="no"
+if echo "${ARGS}"|grep -- "LIST" >/dev/null ; then
+ if echo "${SLACKROLE}"|grep -- "LIST" >/dev/null ; then
+  SLACKROLE="*"
+ fi
+ __ldapsearchhandler -b ${BASEDN} cn=${SLACKROLE} description cksum
+ return 3
+fi
+
+if [ "${SEARCHFORROLE}" -ne "0" -a "${SEARCHDATAATTR}" -ne "0" -a -n "${SEARCHCKSUMATTR}" ] ; then
+
+ for zipfile in `file /var/cache/slack/roles/*|grep -i zip|awk {'print $1'}|sed -e "s/\://g"` ; do
+#-e "s/\://g"|perl -p -e "s/\n/\" /g;s/\/var/\"\/var/g"` ; do 
+# echo "${LOCALROLELIST}"
+# echo "foo${zipfile}"
+ unzip -p ${zipfile} ${SLACKROLE}/ >/dev/null 2>&1
+ if [ $? -eq "0" ] ; then
+  customecho "Found role ${SLACKROLE} in local cache."
+  customecho "Verifying cksum."
+  LOCALROLECKSUM=`cksum ${zipfile}|awk {'print $1" "$2'}`
+  if [ "${LOCALROLECKSUM}" = "${SEARCHCKSUMATTR}" ] ; then
+   customecho "Local role is current."
+   FOUND="yes"
+   LOCALCURRENTROLE="${zipfile}"
+   return 0
+  else
+   customecho "Local role may need updating."
+   FOUND="no"
+  fi
+ else
+  FOUND="no"
+ fi
+ done
+
+ if [ "${FOUND}" = "no" ] ; then
+  customecho "Downloading the latest version of ${SLACKROLE}."
+  return 1
+ fi
+else
+ return 2
+fi
+return 4
+}
+
+unzipandrunrole()
+{
+CURRENTROLE="`basename $1`"
+
+cd /var/cache/slack/roles
+if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+ cat ${CURRENTROLE}
+ sleep 1
+ return 0
+else
+ rm -rf /var/cache/slack/roles/${SLACKROLE};rm -rf /var/lib/slack/stage/roles/${SLACKROLE}*
+ unzip -o ${CURRENTROLE}
+ if [ -n "${SLACKSUBROLE}" ] ; then
+  slack --no-sync ${SLACKROLE}.${SLACKSUBROLE}.${CKSUMSUBARG}
+  return 0
+ else
+  slack --no-sync ${SLACKROLE}.${CKSUMSUBARG}
+  return 0
+ fi
+fi
+}
+
+updateunzipandrunrole()
+{
+
+ __ldapsearchhandler -b ${BASEDN} -t cn=${SLACKROLE} data cksum|grep "data:< file://"|perl -p -e "s/\:\< file\:\/\//\=/g" >/tmp/slack-slaperdata$$
+ . /tmp/slack-slaperdata$$
+ if file ${data}|grep -i zip >/dev/null ; then
+  if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+   cat ${data}
+   sleep 1
+   return 0
+  else 
+   mv ${data} /var/cache/slack/roles/${SLACKROLE}.${DATESTRING}.zip
+   cd /var/cache/slack/roles/
+   rm -rf /var/cache/slack/roles/${SLACKROLE};rm -rf /var/lib/slack/stage/roles/${SLACKROLE}*
+   unzip -o ${SLACKROLE}.${DATESTRING}.zip
+   if [ -n "${SLACKSUBROLE}" ] ; then
+    slack --no-sync ${SLACKROLE}.${SLACKSUBROLE}.${CKSUMSUBARG}
+    return 0
+   else
+    slack --no-sync ${SLACKROLE}.${CKSUMSUBARG}
+    return 0
+   fi
+   return 1 
+  fi
+ else
+  return 1
+ fi
+}
+
+pullfromwebserver()
+{
+if echo "${ARGS}"|grep -- "LIST" >/dev/null ; then
+ if echo "${SLACKROLE}"|grep -- "LIST" >/dev/null ; then
+  SLACKROLE="*"
+ fi
+ wget ${WEBSERVER}?${WEBARGS} -O -
+ return 3
+fi
+if [ -n "${WEBSEARCHROLE}" ] ; then
+FOUND="no"
+ for zipfile in `file /var/cache/slack/roles/*|grep -i zip|awk {'print $1'}|sed -e "s/\://g"` ; do 
+#-e "s/\://g"|perl -p -e "s/\n/\" /g;s/\/var/\"\/var/g"` ; do
+# echo "${LOCALROLELIST}"
+# echo "foo${zipfile}"
+#/bin/sh -i
+ unzip -p ${zipfile} ${SLACKROLE}/ >/dev/null 2>&1
+ if [ $? -eq "0" ] ; then
+  customecho "Found role ${SLACKROLE} in local cache."
+  customecho "Verifying cksum."
+  LOCALROLECKSUM=`cksum ${zipfile}|awk {'print $1" "$2'}`
+  if [ "${LOCALROLECKSUM}" = "${WEBROLECKSUM}" ] ; then
+   customecho "Local role is current."
+   FOUND="yes"
+   LOCALCURRENTROLE="${zipfile}"
+   return 0
+  else
+   customecho "Local role may need updating."
+   FOUND="no"
+  fi
+ else
+  FOUND="no"
+ fi
+ done
+
+ if [ "${FOUND}" = "no" ] ; then
+  customecho "Downloading the latest version of ${SLACKROLE}."
+  return 1
+ fi
+else
+ return 2
+fi
+return 4
+}
+
+webupdateunzipandrunrole()
+{
+ wget ${WEBSERVER}?${WEBARGS} -O - >/tmp/slack-slaperdata$$
+ if file /tmp/slack-slaperdata$$|grep -i zip >/dev/null ; then
+  if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+   cat /tmp/slack-slaperdata$$
+   sleep 1
+   return 0
+  else
+   mv /tmp/slack-slaperdata$$ /var/cache/slack/roles/${SLACKROLE}.${DATESTRING}.zip
+   cd /var/cache/slack/roles/
+   rm -rf /var/cache/slack/roles/${SLACKROLE};rm -rf /var/lib/slack/stage/roles/${SLACKROLE}*
+   unzip -o ${SLACKROLE}.${DATESTRING}.zip
+   if [ -n "${SLACKSUBROLE}" ] ; then
+    slack --no-sync ${SLACKROLE}.${SLACKSUBROLE}.${CKSUMSUBARG}
+    return 0
+   else
+    slack --no-sync ${SLACKROLE}.${CKSUMSUBARG}
+    return 0
+   fi
+   return 1
+  fi
+ else
+  return 1
+ fi
+
+}
+
+slacksumchk()
+{
+SLACKROLE="$1"
+SLACKSUBROLE="$2"
+ROLESCRATCHSUM="/tmp/${FILENAME}.${DATESTRING}.${SLACKROLE}.$$"
+
+if [ -z "${WEBROLECKSUM}" ] ; then
+  CKSUMSUBARG=`echo "${SEARCHCKSUMATTR}"|sed -e "s/\ /\_/g"`
+else
+  CKSUMSUBARG=`echo "${WEBROLECKSUM}"|sed -e "s/\ /\_/g"`
+fi
+
+if [ -z "${CKSUMSUBARG}" ] ; then
+ customecho "Warning in: \$\{CKSUMSUBARG\}"
+ customecho "${CKSUMSUBARG} is null."
+ return 1
+fi
+
+if [ -f /var/lib/slack/slacksum/${SLACKROLE}.${SLACKSUBROLE}.${CKSUMSUBARG} ] ; then
+ SLACKSUMFILE="/var/lib/slack/slacksum/${SLACKROLE}.${SLACKSUBROLE}.${CKSUMSUBARG}"
+else
+ if [ "X${SLACKSUBROLE}" != "X" -a "X${SLACKSUBROLE}" != "X${CKSUMSUBAR}" ] ; then
+  return 1
+ fi 
+ SLACKSUMFILE="/var/lib/slack/slacksum/${SLACKROLE}.${CKSUMSUBARG}"
+fi
+
+if [ ! -f ${SLACKSUMFILE} ] ; then
+ customecho "Warning in: \${SLACKSUMFILE}"
+ customecho "${SLACKSUMFILE} doesnt exist."
+ return 1
+fi
+ 
+if [ ! -s "${SLACKSUMFILE}" ] ; then
+ customecho "Warning in: \$\{SLACKSUMFILE\}"
+ customecho "${SLACKSUMFILE} is null."
+ return 1
+fi
+
+SLACKSUMDFILES="`cat "${SLACKSUMFILE}"|awk {'print $3'}`"
+if [ -z "${SLACKSUMDFILES}" ] ; then
+ customecho "Warning in: \$\{SLACKSUMDFILES\}"
+ customecho "\$\{SLACKSUMDFILES\} is null."
+ return 1
+fi
+
+cat /dev/null > ${ROLESCRATCHSUM}
+for slacksumdli in `echo "${SLACKSUMDFILES}"` ; do
+cd /
+if [ ! -f "${slacksumdli}" ] ; then
+ rm -rf ${ROLESCRATCHSUM}
+ return 1
+fi
+cksum "${slacksumdli}"|awk {'print $1" "$2" "$3'} >> ${ROLESCRATCHSUM}
+status=$?
+if [ ${status} -ne "0" ] ; then
+ rm -rf ${ROLESCRATCHSUM}
+ return 1
+fi
+done
+
+if diff ${ROLESCRATCHSUM} ${SLACKSUMFILE} >/dev/null ; then
+ rm -rf ${ROLESCRATCHSUM}
+ return 0
+else
+ customecho "${SLACKROLE} managed files have been modified."
+ rm -rf ${ROLESCRATCHSUM}
+ return 1
+fi
+
+
+return 4
+
+}
+
+
+roles()
+{
+SLACKROLE="$1"
+SLACKSUBROLE="$2"
+FROMROLELIST="$3"
+if [ "${SLACKSUBROLE}" = "NONE" ] ; then
+ unset SLACKSUBROLE
+fi
+
+if [ -n "${LDAPSERVER}" ] ; then
+ if echo "${PROTO}"|grep ldap >/dev/null ; then
+##  SLACKROLEDESC="`__ldapsearchhandler -b ${BASEDN} cn=${SLACKROLE} description`"
+  ROLEBAREBONES=`__ldapsearchhandler -b ${BASEDN} -A -LLL cn=${SLACKROLE}`
+  STATUS=$?
+  if [ "${STATUS}" != "0" ] ; then
+   echo "Error in: ROLEBAREBONES"
+   echo "Unable to perform search request."
+   echo "Exit status: ${STATUS}"
+   exit ${STATUS}
+  fi
+
+  SEARCHFORROLE=`echo "${ROLEBAREBONES}"|grep -- "^cn\:"|wc -w|awk {'print $1'}`
+  SEARCHDATAATTR=`echo "${ROLEBAREBONES}"|grep -- "^data\:"|wc -w|awk {'print $1'}`
+
+  if echo "${ROLEBAREBONES}"|grep -- "^cksum\:" >/dev/null ; then
+   SEARCHCKSUMATTR=`__ldapsearchhandler -b ${BASEDN} cn=${SLACKROLE} cksum|perl -p -e "s/\#.*//g;s/cksum\: /cksum\=/g"|grep "cksum"|awk -F= {'print $2'}`
+   CKSUMSUBARG=`echo "${SEARCHCKSUMATTR}"|sed -e "s/\ /\_/g"`
+  else
+   SEARCHCKSUMATTR=""
+   CKSUMSUBARG=""
+  fi
+ fi
+
+ pullfromldap
+ STATUS=$?
+ case ${STATUS} in
+       0)
+  if [ "${FROMROLELIST}" != "YES" ] ; then
+   unzipandrunrole ${LOCALCURRENTROLE} 
+   return $?
+  else
+   slacksumchk ${SLACKROLE} ${SLACKSUBROLE}
+   status=$?
+   case ${status} in
+	0)
+    customecho "${SLACKROLE} doesn't need to be run."
+    return ${status}
+		;;
+	1)
+    customecho "${SLACKROLE} must be run."
+    unzipandrunrole ${LOCALCURRENTROLE}
+    return $?
+		;;
+	*)
+    customecho "Unknown error in: slacksumchk()"
+    return 4
+   esac
+  fi
+              ;;
+       1)
+  updateunzipandrunrole
+  return $?
+              ;;
+       *)
+  return ${STATUS}
+ esac
+
+elif [ -n "${WEBSERVER}" ] ; then
+ if echo "${PROTO}"|grep http >/dev/null ; then
+  WEBSEARCHROLE="`wget ${WEBSERVER}?LIST -O - `"
+  WEBROLECKSUM=`echo ${WEBSEARCHROLE}|perl -p -e "s/\#/\n/g"|grep "cn\=${SLACKROLE},"|perl -p -e "s/.*cksum\: //g"|awk {'print $1" "$2'}`
+  CKSUMSUBARG=`echo "${WEBROLECKSUM}"|sed -e "s/\ /\_/g"`
+ fi
+
+ pullfromwebserver
+ STATUS=$?
+ case ${STATUS} in
+       0)
+  unzipandrunrole ${LOCALCURRENTROLE}
+  return $?
+              ;;
+       1)
+  webupdateunzipandrunrole
+  return $?
+              ;;
+       *)
+  return ${STATUS}
+ esac
+
+fi
+
+}
+
+oldrolelist()
+{
+__slapwhoami "${__HOSTNAME}" >/dev/null
+if [ -z "$__CI" ] ; then
+ customecho "Error in: \$__CI"
+ customecho "Unable to determine CI."
+ exit 1
+fi
+if [ "X$__cmEnable" != "X1" ] ; then
+ customecho "cmEnable is not equal 1"
+ customecho "cm has been disabled on this host"
+fi
+if [ -z "$__CI" -o -z "$__cmEnable" ] ; then
+ customecho "Error in: \$__CI"
+ customecho "Unable to determine CI."
+ exit 1
+fi
+if [ -z "${ROLE_LIST}" ] ; then
+ customecho "Error in: \$ROLE_LIST"
+ customecho "Unable to determine ROLE_LIST basedn."
+ customecho "This should be set in the /etc/slack-slaper.conf."
+ exit 1
+fi
+
+SITE="${__SITE}"
+DOMAIN="${__DNSDOMAIN}"
+CI="${__CI}"
+ROLESLIST="`echo "${ARGS}"|perl -p -e "s/--rolelist://g"`"
+ROLESCONF="`echo "${ROLESLIST}"|awk -F. {'print $1'}|perl -p -e "s/\,/\n/g"`"
+##ROLESCONFACTION="`echo "${ROLESLIST}"|awk -F. {'print $2'}`"
+if [ "X$__cmEnable" != "X1" ] ; then
+ ROLESCONFACTION="list"
+else
+ ROLESCONFACTION="`echo "${ROLESLIST}"|awk -F. {'print $2'}`"
+fi
+if echo "${PROTO}"|grep ldap >/dev/null ; then
+ ROLESCONFBLOB="`__ldapsearchhandler -b ${ROLE_LIST} rolename`"
+elif echo "${PROTO}"|grep http >/dev/null ; then
+ ROLESCONFBLOB="`wget ${WEBSERVER}?${ARGS} -O - `"
+fi
+ROLESCONFGLOBAL="`echo "${ROLESCONFBLOB}"|sed -n "/global,${ROLE_LIST}/,/#/p"|grep -v "foo"`"
+ROLESCONFGLOBALROLES="`echo "${ROLESCONFBLOB}"|sed -n "/global,${ROLE_LIST}/,/#/p"|grep "rolename"|awk {'print $2'}`"
+ROLESCONFOSNAME="`echo "${ROLESCONFBLOB}"|sed -n "/${OSNAME},ou=OS,${ROLE_LIST}/,/#/p"|grep -v "foo"`"
+ROLESCONFOSNAMEROLES="`echo "${ROLESCONFBLOB}"|sed -n "/${OSNAME},ou=OS,${ROLE_LIST}/,/#/p"|grep "rolename"|awk {'print $2'}`"
+ROLESCONFOSNAMEROLESMINUS=`echo "${ROLESCONFOSNAMEROLES}"|grep -- "^-"`
+ROLESCONFSITE="`echo "${ROLESCONFBLOB}"|sed -n "/${SITE},ou=site,${ROLE_LIST}/,/#/p"|grep -v "foo"`"
+ROLESCONFSITEROLES="`echo "${ROLESCONFBLOB}"|sed -n "/${SITE},ou=site,${ROLE_LIST}/,/#/p"|grep "rolename"|awk {'print $2'}`"
+ROLESCONFSITEROLESMINUS=`echo "${ROLESCONFSITEROLES}"|grep -- "^-"`
+ROLESCONFCI="`echo "${ROLESCONFBLOB}"|sed -n "/${CI},ou=CI,${ROLE_LIST}/,/#/p"|grep -v "foo"`"
+ROLESCONFCIROLES="`echo "${ROLESCONFBLOB}"|sed -n "/${CI},ou=CI,${ROLE_LIST}/,/#/p"|grep "rolename"|awk {'print $2'}`"
+ROLESCONFCIROLESMINUS=`echo "${ROLESCONFCIROLES}"|grep -- "^-"`
+ROLESCONFGLOBALTEST="`echo "${ROLESCONF}"|grep "global"`"
+ROLESCONFOSTEST="`echo "${ROLESCONF}"|grep "OS"`"
+ROLESCONFSITETEST="`echo "${ROLESCONF}"|grep "site"`"
+ROLESCONFCITEST="`echo "${ROLESCONF}"|grep "CI"`"
+##ROLESCONFHOST=`echo "${ROLESCONFBLOB}"|sed -n "/host,${ROLE_LIST}/,/#/p"|grep -v ", foo.*foo"`
+ROLESCONFHOST="${__CUSTOMERBLOB}"
+##ROLESCONFHOSTROLES=`echo "${ROLESCONFHOST}"|grep "^rolename"|awk {'print $2'}|grep "^${__HOSTNAME}"|awk -F\: {'print $2'}`
+ROLESCONFHOSTROLES=`echo "${ROLESCONFHOST}"|grep "^rolename:"|awk -F\: {'print $2'}|awk {'print $1'}`
+ROLESCONFHOSTROLEMINUS=`echo "${ROLESCONFHOSTROLES}"|grep -- "^-"`
+ROLESCONFHOSTTEST="`echo "${ROLESCONF}"|grep "host"`"
+RUNLIST=""
+
+
+if [ "${ROLESCONFACTION}" = "run" -a -n "${ROLESCONFGLOBAL}" -a -n "${ROLESCONFGLOBALTEST}" ] ; then
+ echo | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "##global##" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "${ROLESCONFGLOBAL}" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "#" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "Now evaluating rolelist "global", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ RUNLIST="${ROLESCONFGLOBALROLES}"
+# echo "Now running rolelist "global", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+# for rolelistli in `echo "${ROLESCONFGLOBALROLES}"` ; do
+#  SLACKSUBROLE=`eval echo "${rolelistli}"|awk -F. {'print $2'}`
+#  SLACKROLE=`eval echo "${rolelistli}"|awk -F. {'print $1'}`
+#  echo "${SLACKROLE}"
+#  roleshandler "${SLACKROLE}" "${SLACKSUBROLE}"
+# done
+elif [ "${ROLESCONFACTION}" = "list" -o -z "${ROLESCONFACTION}" ] ; then
+ echo
+ echo "##global##"
+ echo "${ROLESCONFGLOBAL}"
+ echo "#"
+fi
+
+if [ "${ROLESCONFACTION}" = "run" -a -n "${ROLESCONFOSNAME}" -a -n "${ROLESCONFOSTEST}" ] ; then
+ echo | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "##OS##" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "${ROLESCONFOSNAME}" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "#" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "Now evaluating rolelist "OS", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ ROLESCONFOSNAMEROLES=`echo "${ROLESCONFOSNAMEROLES}"|grep -v -- "^-"`
+ RUNLIST=`echo "${RUNLIST} ${ROLESCONFOSNAMEROLES}"|perl -p -e "s/\ /\n/g"|grep -v -- "^-"`
+ if [ -n "${ROLESCONFOSNAMEROLESMINUS}" ] ; then
+  ROLESCONFOSNAMEROLESMINUS=`echo "${ROLESCONFOSNAMEROLESMINUS}"|perl -p -e "s/^-//g"`
+  for minusli in `echo "${ROLESCONFOSNAMEROLESMINUS}"` ; do
+   RUNLIST=`echo "${RUNLIST}"|grep -v -- "^${minusli}$"`
+  done 
+ fi
+
+# EVALDOSNAMEROLES="`echo "${ROLESCONFOSNAMEROLES}"
+# echo "Now running rolelist "OS", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+# for rolelistli in `echo "${ROLESCONFOSNAMEROLES}"` ; do
+#  SLACKSUBROLE=`eval echo "${rolelistli}"|awk -F. {'print $2'}`
+#  SLACKROLE=`eval echo "${rolelistli}"|awk -F. {'print $1'}`
+#  echo "${SLACKROLE}"
+#  roleshandler "${SLACKROLE}" "${SLACKSUBROLE}"
+# done
+elif [ "${ROLESCONFACTION}" = "list" -o -z "${ROLESCONFACTION}" ] ; then
+ echo
+ echo "##OS##"
+ echo "${ROLESCONFOSNAME}"
+ echo "#"
+fi
+
+if [ "${ROLESCONFACTION}" = "run" -a -n "${ROLESCONFSITE}" -a -n "${ROLESCONFSITETEST}" ] ; then
+ echo | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "##site##" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "${ROLESCONFSITE}" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "#" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "Now evaluating rolelist "site", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ ROLESCONFSITEROLES=`echo "${ROLESCONFSITEROLES}"|grep -v -- "^-"`
+ RUNLIST=`echo "${RUNLIST} ${ROLESCONFSITEROLES}"|perl -p -e "s/\ /\n/g"|grep -v -- "^-"`
+ if [ -n "${ROLESCONFSITEROLESMINUS}" ] ; then
+  ROLESCONFSITEROLESMINUS=`echo "${ROLESCONFSITEROLESMINUS}"|perl -p -e "s/^-//g"`
+  for minusli in `echo "${ROLESCONFSITEROLESMINUS}"` ; do
+   RUNLIST=`echo "${RUNLIST}"|grep -v -- "^${minusli}$"`
+  done
+ fi
+# echo "Now running rolelist "site", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+# for rolelistli in `echo "${ROLESCONFSITEROLES}"` ; do
+#  SLACKSUBROLE=`eval echo "${rolelistli}"|awk -F. {'print $2'}`
+#  SLACKROLE=`eval echo "${rolelistli}"|awk -F. {'print $1'}`
+#  echo "${SLACKROLE}"
+#  roleshandler "${SLACKROLE}" "S{SLACKSUBROLE}"
+# done
+elif [ "${ROLESCONFACTION}" = "list" -o -z "${ROLESCONFACTION}" ] ; then
+ echo
+ echo "##site##"
+ echo "${ROLESCONFSITE}"
+ echo "#"
+fi
+
+if [ "${ROLESCONFACTION}" = "run" -a -n "${ROLESCONFCI}" -a -n "${ROLESCONFCITEST}" ] ; then
+ echo | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "##CI##" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "${ROLESCONFCI}" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "#" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "Now evaluating rolelist "CI", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ ROLESCONFCIROLES=`echo "${ROLESCONFCIROLES}"|grep -v -- "^-"`
+ RUNLIST=`echo "${RUNLIST} ${ROLESCONFCIROLES}"|perl -p -e "s/\ /\n/g"|grep -v -- "^-"`
+ if [ -n "${ROLESCONFCIROLESMINUS}" ] ; then
+  ROLESCONFCIROLESMINUS=`echo "${ROLESCONFCIROLESMINUS}"|perl -p -e "s/^-//g"`
+  for minusli in `echo "${ROLESCONFCIROLESMINUS}"` ; do
+   RUNLIST=`echo "${RUNLIST}"|grep -v "^${minusli}$"`
+  done
+ fi
+
+elif [ "${ROLESCONFACTION}" = "list" -o -z "${ROLESCONFACTION}" ] ; then
+ echo
+ echo "##CI##"
+ echo "${ROLESCONFCI}"
+ echo "#"
+fi
+if [ "${ROLESCONFACTION}" = "run" -a -n "${ROLESCONFHOST}" -a -n "${ROLESCONFHOSTTEST}" ] ; then
+ echo "##host##" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "${ROLESCONFHOSTROLES}" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "#" | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ echo "Now evaluating rolelist "host", please wait..." | tee -a /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ ROLESCONFHOSTROLES=`echo "${ROLESCONFHOSTROLES}"|grep -v -- "^-"`
+ RUNLIST=`echo "${RUNLIST} ${ROLESCONFHOSTROLES}"|perl -p -e "s/\ /\n/g"|grep -v -- "^-"`
+ if [ -n "${ROLESCONFHOSTROLEMINUS}" ] ; then
+  ROLESCONFHOSTROLEMINUS=`echo "${ROLESCONFHOSTROLEMINUS}"|perl -p -e "s/^-//g"`
+  for minusli in `echo "${ROLESCONFHOSTROLEMINUS}"` ; do
+   RUNLIST=`echo "${RUNLIST}"|grep -v "^${minusli}$"`
+  done
+ fi
+
+elif [ "${ROLESCONFACTION}" = "list" -o -z "${ROLESCONFACTION}" ] ; then
+ echo
+ echo "##host##"
+ echo "${ROLESCONFHOSTROLES}"
+ echo "#"
+fi
+
+if [ "${ROLESCONFACTION}" = "run" -a -n "${RUNLIST}" ] ; then
+echo
+echo "Evaluation stage complete."
+echo "Running roles."
+echo
+RUNLIST=`echo "${RUNLIST}"|sort|uniq`
+ for rolelistli in `echo "${RUNLIST}"` ; do
+  SLACKSUBROLE=`eval echo "${rolelistli}"|awk -F. {'print $2'}`
+  SLACKROLE=`eval echo "${rolelistli}"|awk -F. {'print $1'}`
+  if [ -z "${SLACKSUBROLE}" ] ; then
+   SLACKSUBROLE="NONE"
+  fi
+  echo "${SLACKROLE}"
+  FROMROLELIST="YES"
+  roleshandler "${SLACKROLE}" "${SLACKSUBROLE}" "${FROMROLELIST}" 2>&1 | tee /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ done
+fi
+
+}
+
+rolelist()
+{
+__slapwhoami "${__HOSTNAME}" >/dev/null
+if [ -z "$__CI" ] ; then
+ customecho "Error in: \$__CI"
+ customecho "Unable to determine CI."
+ exit 1
+fi
+if [ "X$__cmEnable" != "X1" ] ; then
+ customecho "cmEnable is not equal 1"
+ customecho "cm has been disabled on this host"
+fi
+if [ -z "$__CI" -o -z "$__cmEnable" ] ; then
+ customecho "Error in: \$__CI"
+ customecho "Unable to determine CI."
+ exit 1
+fi
+
+roleshandler rolelist NONE YES 2>&1 | tee /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+
+ROLE_LIST='/var/cache/slack/roles.conf'
+if [ -z "${ROLE_LIST}" ] ; then
+ customecho "Error in: \$ROLE_LIST"
+ customecho "Unable to determine ROLE_LIST basedn."
+ customecho "This should be set in the /etc/slack-slaper.conf."
+ exit 1
+fi
+
+SITE="${__SITE}"
+DOMAIN="${__DNSDOMAIN}"
+CI="${__CI}"
+HOSTNAME="${__HOSTNAME}"
+ROLESLIST="`echo "${ARGS}"|perl -p -e "s/--rolelist.//g"`"
+ROLESCONFACTION=`echo "${ROLESLIST}"`
+MYROLES=`grep "^#*${HOSTNAME}:" ${ROLE_LIST}`
+RUNLIST=`echo "${MYROLES}"|sed -e "s/#.*//g"|awk -F\: {'print $2'}|awk {'print $1'}|grep '.'`
+
+if [ "X${ROLESCONFACTION}" = "Xlist" -o "X${ROLESCONFACTION}" = "X" -o "X${RUNLIST}" = "X" ] ; then
+  echo
+  echo myRoles:
+  echo
+  echo "${MYROLES}"
+  echo
+fi
+
+if [ "X${ROLESCONFACTION}" = "Xrun" -a "X${RUNLIST}" != "X" ] ; then
+  echo
+  echo "runRoles:"
+  echo
+  echo "${RUNLIST}"
+  echo
+
+##exit 138
+
+  for rolelistli in `echo "${RUNLIST}"` ; do
+    SLACKROLE=`eval echo "${rolelistli}"|awk -F. {'print $1'}`
+    SLACKSUBROLE=`eval echo "${rolelistli}"|sed -e "s/^${SLACKROLE}\.*//"`
+    if [ -z "${SLACKSUBROLE}" ] ; then
+      SLACKSUBROLE="NONE"
+    fi
+    echo
+    echo "${SLACKROLE}:"
+    echo
+    FROMROLELIST="YES"
+    roleshandler "${SLACKROLE}" "${SLACKSUBROLE}" "${FROMROLELIST}" 2>&1 | tee /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+  done
+fi
+}
+
+proxyroleshandler()
+{
+SLACKROLE="$1"
+SLACKSUBROLE="$2"
+FROMROLELIST="$3"
+roles ${SLACKROLE} ${SLACKSUBROLE} ${FROMROLELIST}
+STATUS=$?
+case ${STATUS} in
+      0)
+ customecho "Slack role ${SLACKROLE} completed."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      1)
+ customecho "Error in contents of attr: data"
+ customecho "For filter cn=${SLACKROLE}"
+ customecho "Slack role ${SLACKROLE} Errored."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      2)
+ customecho "Error in filter: cn=${SLACKROLE}"
+ customecho "Unable to retrieve attribute: data"
+ customecho "Slack role ${SLACKROLE} Errored."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      3)
+ customecho "Slack role ${SLACKROLE} completed."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      *)
+ customecho "Unknown Error in:  roles"
+ customecho "Slack role ${SLACKROLE} Errored."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+esac
+
+}
+
+roleshandler()
+{
+SLACKROLE="$1"
+SLACKSUBROLE="$2"
+FROMROLELIST="$3"
+roles ${SLACKROLE} ${SLACKSUBROLE} ${FROMROLELIST}
+STATUS=$?
+case ${STATUS} in
+      0)
+ customecho "Slack role ${SLACKROLE} completed."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      1)
+ customecho "Error in contents of attr: data"
+ customecho "For filter cn=${SLACKROLE}"
+ customecho "Slack role ${SLACKROLE} Errored."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      2)
+ customecho "Error in filter: cn=${SLACKROLE}"
+ customecho "Unable to retrieve attribute: data"
+ customecho "Slack role ${SLACKROLE} Errored."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      3)
+ customecho "Slack role ${SLACKROLE} completed."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+             ;;
+      *)
+ customecho "Unknown Error in:  roles"
+ customecho "Slack role ${SLACKROLE} Errored."
+ customecho "Exit status: ${STATUS}"
+ return ${STATUS}
+esac
+
+}
+
+####MAIN ROUTINE####
+
+if [ -f /tmp/ldapsearch-data* ] ; then
+ rm -rf /tmp/ldapsearch-data*
+fi
+
+if [ -z "${ARGS}" ] ; then
+ usage
+ exit
+fi
+
+if [ -z "${LDAPSERVER}" -a -z "${WEBSERVER}" ] ; then
+ echo "Error in:"
+ echo "variable PROTO"
+ echo "No known protocal identifiers in string:"
+ echo "SOURCE=${SOURCE}"
+ echo "In file ${CONF}."
+ exit 1
+fi
+
+if echo "${ARGS}"|grep -- "--rolelist" >/dev/null ; then
+# echo "--rolelist test"
+ rolelist 
+ STATUS=$?
+ if [ -f /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log ] ; then
+##  cat /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+  zip -mjqT /var/lib/slack/logs/slack-slaper.archivedlogs.zip /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ fi
+ exit ${STATUS}
+else
+ SLACKROLE="`echo $1|awk -F. {'print $1'}`" 
+ SLACKSUBROLE=`echo $1|sed -e "s/^${SLACKROLE}\.*//"`
+ if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+  proxyroleshandler ${SLACKROLE} ${SLACKSUBROLE}
+  STATUS=$?
+  exit ${STATUS}
+ fi
+ roleshandler ${SLACKROLE} ${SLACKSUBROLE} 2>&1 | tee /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ STATUS=$?
+ if [ -f /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log ] ; then
+## cat /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log 
+  zip -mjqT /var/lib/slack/logs/slack-slaper.archivedlogs.zip /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+ fi
+ exit ${STATUS}
+fi

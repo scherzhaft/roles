@@ -1,0 +1,20 @@
+#!/bin/bash
+
+ARGS=$*
+
+if [ -z "${ARGS}" ] ; then
+ exit
+fi
+
+NETMASK=`echo "${ARGS}" | awk '{ for(i=1; i <= 8; i=i+2) print substr($NF,i,2)}'`
+DECMASK=""
+
+for i in $NETMASK; do
+        if [ -z "$DECMASK" ]; then
+                DECMASK=$(( 16#$i ))
+        else
+                DECMASK=${DECMASK}.$(( 16#$i ))
+        fi
+done
+
+echo $DECMASK

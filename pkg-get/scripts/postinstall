@@ -1,0 +1,21 @@
+#!/bin/bash
+SLACKROLE="${*}"
+SUBROLEACTION=`echo "${SLACKROLE}"|awk -F\. {'print $2'}|grep -v "^[0-9]*_[0-9]*$"` 
+SUBROLEPKG=`echo "${SLACKROLE}"|awk -F\. {'print $3'}|grep -v "^[0-9]*_[0-9]*$"`
+PKGARGS=`echo "${SLACKROLE}"|perl -p -e "s/\./\n/g"|grep ".=."`
+export SCRIPTDIR=`dirname $0`
+test "X${PKGARGS}" != "X" && mkdir -p "${SCRIPTDIR}/roles/mypkgask/files/var/pkg-get/pkgask"
+test "X${PKGARGS}" != "X" && echo "${PKGARGS}" > "${SCRIPTDIR}/roles/mypkgask/files/var/pkg-get/pkgask/${SUBROLEPKG}"
+
+##set +x
+
+. /etc/default/SYSconstants
+
+
+repo "${SUBROLEACTION}.${SUBROLEPKG}"
+
+if [ "X${CURRPKGSTATE}" = "X0" -o "X${SUBROLEPKG}" = "X" -o "X${SUBROLEACTION}" = "X" ] ; then
+  test "X${SUBROLEACTION}${SUBROLEPKG}" = "X" && slacksum "${SLACKROLE}"
+  exit 0
+fi
+

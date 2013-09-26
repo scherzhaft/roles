@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/bin/rpm -qa >${SPOOL}/rpminfo.out

@@ -1,0 +1,37 @@
+#!/bin/bash
+
+
+DATESTRING="$__DATESTRING"
+HOSTNAME="$__HOSTNAME"
+SUDO_USER_MAIL="$__SUDO_USER_MAIL"
+SUDO_USER="$__SUDO_USER"
+OSNAME="$__OSNAME"
+ARCH="$__ARCH"
+
+. /etc/default/SYSconstants
+UPDATELIST=`/usr/bin/yum check-update|grep -v -E '(\[|\])'|grep -- '-'`
+
+if [ "X${UPDATELIST}" != "X" ] ; then
+  UPDATEQTY=`echo "${UPDATELIST}"|wc -l|awk {'print $1'}`
+else
+  UPDATEQTY='0'
+fi
+
+OELSYNCDATE=`cat /opt/sysupdate/config.d/oelSyncDate 2>/dev/null`
+if [ "X${OELSYNCDATE}" = "X" ] ; then
+  OELSYNCDATE='foo'
+fi
+
+printf "Using repodata from ${OELSYNCDATE}\nHost: ${HOSTNAME} (${OSNAME}/`uname -r`/${ARCH})\nList: check-update (${UPDATEQTY}/9999)\n\n" >"/opt/sysupdate/yum.out.${DATESTRING}"
+
+currsysupdate_repo=`cat /etc/yum.repos.d/sysupdate.repo`
+sleep 2
+/usr/sbin/slack-slaper sudoers-update.install.missing
+sleep 2
+test "X${currsysupdate_repo}" != "X" && echo "${currsysupdate_repo}" > /etc/yum.repos.d/sysupdate.repo
+sleep 2
+/usr/bin/yum --exclude=SYS* -y update >>"/opt/sysupdate/yum.out.${DATESTRING}" 2>&1
+
+cat /opt/sysupdate/yum.out.${DATESTRING}|mailx -s "yum.run ${HOSTNAME}" ${SUDO_USER_MAIL} 2>&1 >/dev/null
+
+/usr/sbin/slack-slaper sysupdate.report%__SUDO_USER=${SUDO_USER}

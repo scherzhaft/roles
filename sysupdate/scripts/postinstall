@@ -1,0 +1,204 @@
+#!/bin/bash
+
+set -x
+test -f /etc/yum/pluginconf.d/rhnplugin.conf && perl -p -i -e "s|^enabled.*$|enabled=0|g" /etc/yum/pluginconf.d/rhnplugin.conf 
+
+DIRTYREPOS="ULN-Base.repo*
+SYS-rhn.repo*
+mindtouch.repo*
+mrepo.repo*
+public-yum-el5.repo*
+public-yum-ovm2.repo*
+rhel-debuginfo.repo*
+rhel-source.repo*
+update-yum.repo*
+yum-ovm2.repo*"
+
+FQDIRTYREPOS=`echo "${DIRTYREPOS}"|awk '{if ($1 != "" ) {print "/etc/yum.repos.d/"$1}}'`
+
+EXIST=`ls -d ${FQDIRTYREPOS} 2>/dev/null`
+test "X${EXIST}" != "X" && rm -f ${EXIST}
+set +x
+
+export __DATESTRING=`date +%m_%d_%Y_%H_%M_%S`
+DATESTRING="$__DATESTRING"
+SUBROLE=`echo "${*}"|awk -F\. {'print $2'}|perl -p -e "s/\%.*//g"`
+PWD=`pwd`
+export SYSTEM="${PWD}/%FETCHCRED%"
+chown root:root ${SYSTEM}
+chmod 400 ${SYSTEM}
+ARGS="${*}"
+ROLENAME=`echo "${ARGS}"|awk -F\. {'print $1'}`
+POSTENV=`echo "${ARGS}"|perl -p -e "s/\%/\n/g"|grep "^..*=..*"|awk -F\. {'print $1'}`
+
+. /etc/default/SYSconstants
+##set -x
+updatestatus()
+{
+mkdir -p /opt/sysupdate/state/ && SYSTIME=`echo|${__GAWK} ' {{print systime()}}'` && echo "${SYSTIME}:${STUPDATE}" >> /opt/sysupdate/state/status.out
+
+}
+
+test "X${POSTENV}" != "X" && eval export "${POSTENV}"
+
+##/usr/sbin/slack --no-sync --no-scripts ${ROLENAME}.${__OSNAME}
+
+IDTEST=`id|grep -i "^uid=0(root)"`
+if [ "X${?}" = "X0" ] ; then
+ CURRCRON=`crontab -l`
+ UPDATECRON='# sysupdate: download system updates
+0 * * * * . /etc/profile;. /etc/default/admin-functions;__slapjob >/dev/null 2>&1'
+
+ UPDATETEST=`echo "${CURRCRON}"|grep ';__slapjob .*>/dev/null .*2>&1$'`
+ UPDATESTATUS="$?"
+ if [ "X${UPDATESTATUS}" != "X0" ] ; then
+  crontab -l >/var/tmp/currcron$$
+  crontab -l|grep -v ';__slapjob$'|grep -v '^# .*sysupdate:'|grep -v ';__slapjob .*' >/var/tmp/cronedit$$
+  echo "${UPDATECRON}" >>/var/tmp/cronedit$$
+  sleep 1
+  crontab /var/tmp/cronedit$$
+ fi
+fi  
+
+
+
+  
+case "${__OSNAME}" in
+ SunOS)
+  PATCHFILECKSUM=`cksum /opt/SYSpca-client/SYScurrrev.xref 2>&1`
+  STATUS=$?
+  if [ "${STATUS}" = "0" ] ; then
+   PATCHFILECKSUM=`echo "${PATCHFILECKSUM}"|awk {'print $1"."$2'}`
+   headerdate=`head -1 /opt/SYSpca-client/SYScurrrev.xref|grep "PATCHDIAG"|perl -p -e "s/\#//g"|awk {'print $NF'}|perl -p -e "s/\//\_/g"`
+   if [ "X${headerdate}" != "X" ] ; then
+    destfilename="patchdiag.xref.${headerdate}.${PATCHFILECKSUM}"
+   else
+    destfilename="patchdiag.xref.${PATCHFILECKSUM}"
+   fi
+   mv /opt/SYSpca-client/SYScurrrev.xref /opt/SYSpca-client/${destfilename}.xref
+  fi
+
+  cd /opt/SYSpca-client && ln -sf ./${destfilename}.xref ./SYScurrrev.xref
+  cd /opt/SYSpca-client && ln -sf ./SYScurrrev.xref ./patchdiag.xref 
+ ;;
+
+ Linux)
+  echo foo
+ ;;
+
+ *)
+  echo "unknown OS"
+  exit 1
+esac
+
+echo "${__HOSTNAME}"|$__GREP -E '(^none|^localhost)' >/dev/null
+JUMPSTATUS="$?"
+if [ "X${JUMPSTATUS}" = "X1" ] ; then
+
+ case "${SUBROLE}" in
+       run)
+## if [ "X${OSNAME}" = "XSunOS" ] ; then
+## (cd /opt/SYSpca-client && ./pca -X `pwd` -y -i missingrs >./pca.out.${DATESTRING} 2>&1;cat ./pca.out.${DATESTRING}|mailx -s "pca.run ${__HOSTNAME}" ${__SUDO_USER_MAIL} 2>&1 >/dev/null;/usr/sbin/slack-slaper sysupdate.report%__SUDO_USER=${__SUDO_USER}) >/dev/null 2>/dev/null < /dev/null &
+##
+##  /usr/bin/nohup -p $!
+## elif [ "X${OSNAME}" = "XLinux" ] ; then
+##
+##  UPDATELIST=`/usr/bin/yum check-update|grep -v -E '(\[|\])'|grep -- '-'`
+##
+##  if [ "X${UPDATELIST}" != "X" ] ; then
+##   UPDATEQTY=`echo "${UPDATELIST}"|wc -l|awk {'print $1'}`
+##  else
+##   UPDATEQTY='0'
+##  fi
+## 
+##  OELSYNCDATE=`cat /opt/sysupdate/config.d/oelSyncDate 2>/dev/null`
+##  if [ "X${OELSYNCDATE}" = "X" ] ; then
+##   OELSYNCDATE='foo'
+##  fi
+## 
+##  printf "Using repodata from ${OELSYNCDATE}\nHost: ${__HOSTNAME} (${__OSNAME}/`uname -r`/${__ARCH})\nList: check-update (${UPDATEQTY}/9999)\n\n" >"/opt/sysupdate/yum.out.${DATESTRING}"
+##  nohup /usr/bin/yum -y update >>"/opt/sysupdate/yum.out.${DATESTRING}" 2>&1 &
+## fi
+  /usr/bin/nohup /opt/sysupdate/bin/run  >/dev/null 2>/dev/null < /dev/null &
+              ;;
+       report)
+  SYSUPDATE="/opt/sysupdate"
+  CURRRUN="/opt/${DATESTRING}"
+  SPOOL="${SYSUPDATE}/spool"
+  REPORT_D="${SYSUPDATE}/report.d"
+  REPORT="${SYSUPDATE}/report"
+  REPORTZIP="${REPORT}/sysupdate.report.zip"
+  REPORTARCHIVEZIP="${REPORT}/sysupdate.report.archive.zip"
+  LDIFDIR="${SYSUPDATE}/ldif" 
+  PCACLIENT="/opt/SYSpca-client"
+
+  if [ -f "${REPORTARCHIVEZIP}" ] ; then
+   REPORTARCHIVESIZE=`ls -al "${REPORTARCHIVEZIP}"|awk {'print $5'}`
+  fi
+
+  if [ "X${REPORTARCHIVESIZE}" = "X" ] ; then
+   REPORTARCHIVESIZE='0'
+  fi
+
+  if [ "${REPORTARCHIVESIZE}" -gt '4000000' ] ; then
+   rm "${REPORTARCHIVEZIP}"
+  fi
+
+  rm -rf "${SPOOL}"
+  mkdir -p "${SPOOL}"
+  for i in ${REPORT_D}/* ; do
+   echo "#### running ${i} ####"
+   . ${i}
+  done
+ 
+  cd "${SPOOL}"
+  CURRCKSUM=`cksum *|sort -u|cksum - |awk {'print $1" "$2'}`
+  CURRUNDIR=`echo "${CURRCKSUM}"|awk {'print $1"_"$2'}`
+  cd "${SPOOL}" && rm -rf ${REPORTZIP} && echo "DESC: sysupdate.report
+CKSUM: ${CURRCKSUM}
+SUDO_USER: ${__SUDO_USER}"|zip -q -X -z ${REPORTZIP} *
+
+  cd /opt && ln -s ./sysupdate ./${CURRUNDIR} && zip -qrm ${REPORTARCHIVEZIP} ./${CURRUNDIR} -i ./${CURRUNDIR}/spool/* ./${CURRUNDIR}/report.d/* && rm ./${CURRUNDIR}
+
+  CKSUMSEARCH=`__ldapsearchhandler -x -b "ou=${__HOSTNAME},ou=hosts,${__LDAPDN}" hostcksum modifytimestamp`
+  SEARCHSTATUS=$?
+  if [ "X${SEARCHSTATUS}" = "X0" ] ; then
+   TIMESTAMP=`echo "${CKSUMSEARCH}"|grep "^modifytimestamp:"`
+   CKSUMINLDAP=`echo "${CKSUMSEARCH}"|grep "^hostcksum:"`
+   CKSUMSTATUS=$?
+   if [ "X${CKSUMSTATUS}" = "X0" ] ; then
+    CKSUMINLDAP=`echo "${CKSUMINLDAP}"|perl -p -e "s/^hostcksum://g"|awk {'print $1" "$2'}`
+    TIMESTAMP=`echo "${TIMESTAMP}"|perl -p -e "s/^modifytimestamp://g"|awk {'print $1'}|perl -p -e "s/Z$//g"|sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{2\}\)/\1\|\2/;ta'|awk -F\| {'print $1$2" "$3" "$4" "$5" "$6" "$7" "$8'}`
+    if [ -f "${__GAWK}" ] ; then
+      AMIDLE=`echo "${TIMESTAMP}"|${__GAWK} ' {if(systime() - mktime($1" "$2" "$3" "$4" "$5" "$6" "$7) > 1209600) {print $1" "$2" "$3" "$4" "$5" "$6" "$7}}'|grep '.'`
+    else
+      AMIDLE=""
+    fi
+   else
+    CKSUMINLDAP=NOCKSUM
+   fi
+  else
+   CKSUMINLDAP=NOHOSTENTRY
+  fi
+  if [ "X${CKSUMINLDAP}" = "X${CURRCKSUM}" -a "X${AMIDLE}" = "X" ] ; then
+   echo "no system changes... doing nothing"
+   exit 0
+  else
+   CKSUM="${CURRCKSUM}"
+   reporttemplate
+  fi
+              ;;
+       st-*)
+    STUPDATE=`echo "${SUBROLE}"|grep "^st-"|perl -p -e "s/^st-//g"`
+    test X${STUPDATE} != X && updatestatus && /usr/sbin/slack-slaper sysupdate.report
+  exit 0
+      ;;
+      *)
+  exit 0
+ esac
+elif [ "X${JUMPSTATUS}" = "X0" -a "X${SUBROLE}" = "Xrun" ] ; then
+ (cd /opt/SYSpca-client && ./pca -X `pwd` -y -i missingrs >./pca.out.${DATESTRING} 2>&1) >/dev/null 2>/dev/null < /dev/null &
+
+ /usr/bin/nohup -p $!
+
+fi

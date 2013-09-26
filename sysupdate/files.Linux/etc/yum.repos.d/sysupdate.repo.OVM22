@@ -1,0 +1,7 @@
+
+[OVM22_sysupdate_latest]
+name=OracleVM 2 - 2.2.2 - $basearch - latest
+baseurl=http://%SHORTSUPPORT%/kickstart/updates/yum/OracleVM/OVM22/latest/$basearch/
+gpgcheck=0
+enabled=1
+

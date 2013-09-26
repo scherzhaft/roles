@@ -1,0 +1,7 @@
+
+[RHEL_sysupdate_latest]
+name=Red Hat Linux $releasever - $basearch - sysupdate - latest
+baseurl=http://%SHORTSUPPORT%/kickstart/mrepo/rhel-$releasever-$basearch/updates
+gpgcheck=0
+enabled=1
+

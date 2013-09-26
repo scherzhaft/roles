@@ -1,0 +1,108 @@
+#!/bin/bash
+
+. /etc/default/SYSconstants
+
+emailhead()
+{
+EMAILHEAD="From: ${FROM}
+To: ${RECV}
+MIME-version: 1.0
+Content-language: en
+Subject: system report: ${FILEBASE}
+X-Accept-Language: en
+Priority: normal
+Content-type: multipart/mixed; boundary=--731945e04e8534922717
+
+This is a multi-part message in MIME format.
+
+----731945e04e8534922717
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+Content-Transfer-Encoding: plain
+
+${MESG}
+
+See attachment.  Best viewed with excel/openoffice.
+
+
+ _____________________________________________________
++                                                     +
++ For the latest system report summarys please visit: +
++      https://FOO.FOO.FOOOO/sysrpts/summary/         +
++ For the latest system reports please visit:         +
++      https://FOO.FOO.FOOOO/sysrpts/                 +
++_____________________________________________________+
+
+----731945e04e8534922717
+Content-Type: text/x-comma-separated-values
+Content-Transfer-Encoding: plain
+Content-Disposition: attachment; filename=${FILEBASE}"
+}
+
+main()
+{
+FILE=`echo "${*}"|awk {'print $1'}`
+FILEBASE=`basename "${FILE}"`
+RECV=`echo "${*}"|awk {'print $2'}`
+MESGFILE=`echo "${*}"|perl -p -e "s/ \-\-/\n/g"|grep "^mesg "|awk {'print $2'}`
+if [ "X${MESGFILE}" != "X" ] ; then
+ MESG=`cat "${MESGFILE}"`
+fi
+
+if [ "X${FILE}" = "X" ] ; then
+ echo "error in:main()"
+ echo "FILE is null"
+ exit 1
+fi
+
+test -f "${FILE}"
+FILESTATUS="$?"
+
+if [ "X${FILESTATUS}" != "X0" ] ; then
+ echo "error in:main()"
+ echo "${FILE} not found"
+ exit 1
+fi
+
+if [ "X${RECV}" = "X" ] ; then
+ echo "error in:main()"
+ echo RECV is null
+ exit 1
+fi
+
+echo "${RECV}"|grep '@FOO.FOO.*' >/dev/null
+RECVSTATUS="$?"
+
+if [ "X${RECVSTATUS}" != "X0" ] ; then
+ echo "error in:main()"
+ echo "RECV is not a valid address"
+ exit 1
+fi
+
+
+if [ "X${FROM}" = "X" ] ; then
+ FROM="root@${__HOSTNAME}"
+fi
+
+emailhead
+ATTACH=`cat ${FILE}`
+if [ "X${ATTACH}" != "X" ] ; then
+ printf "${EMAILHEAD}\n\n${ATTACH}\n\n----731945e04e8534922717--"|/usr/lib/sendmail -t -oi
+fi
+
+}
+
+usage()
+{
+echo "usage: ${SELF} [fileattachment] [recipient] [[--mesg mesgfile]]"
+}
+
+ARGS="${*}"
+SELF=`basename $0`
+
+if [ "X${ARGS}" = "X" ] ; then
+ usage
+ exit 1
+fi
+
+main "${ARGS}"

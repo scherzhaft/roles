@@ -1,0 +1,334 @@
+#!/bin/sh
+
+PATH=$PATH:/sbin:/bin:/usr/sfw/bin:/usr/sfw/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/opt/sfw/bin:/opt/sfw/sbin:/opt/csw/bin:/opt/csw/sbin
+#__IPLIST=`ifconfig -a|perl -p -e "s/addr\://%FOO%0"|grep "inet "|awk {'print $2'}|perl -p -e "s/\n/ /g"`
+__MYIPLIST="`ifconfig -a|grep -v "inet6"|grep "inet"|perl -p -e "s/addr\://%FOO%0.0"`"
+__MYCLASSBEES="`echo "${__MYIPLIST}"|awk -F. {'print $1"."$2'}|sort|uniq`"
+__OSNAME=`uname -s`
+__ARCH=`uname -p`
+__RELEASE=`uname -r`
+if [ "${__OSNAME}" = "SunOS" ] ; then
+ __HOSTNAME=`/usr/bin/hostname`
+ __GREP="/usr/xpg4/bin/grep"
+ __LDAPSEARCH="/usr/local/bin/ldapsearch"
+ __LDAPMODIFY="/usr/local/bin/ldapmodify"
+ __LDAPADD="/usr/local/bin/ldapadd"
+ __GAWK="/opt/sfw/bin/gawk"
+ __FILE="/opt/sfw/bin/gfile"
+else
+ __FILE="file"
+ __HOSTNAME=`hostname`
+ __GREP="grep"
+ __GAWK="/bin/awk"
+ __LDAPSEARCH="/usr/bin/ldapsearch"
+ __LDAPMODIFY="/usr/bin/ldapmodify"
+ __LDAPADD="/usr/bin/ldapadd"
+fi
+
+test "X${__HOSTNAME}" != "X" && __HOSTNAMEIP=`getent hosts ${__HOSTNAME}|head -1|awk {'print $1'}`
+
+__HOSTSHORT=`echo "${__HOSTNAME}"|awk -F. {'print $1'}`
+
+nmsitehosts()
+{
+HOSTNAMES=`echo "${__SITES}"|while read line ; do  echo "${__HOSTNAME}"|sed -e "s/\.${__SITE}\./.$line./g"|sed -e "s/\.int\.ppa\./.%FOO%.%FOO%/g"|sed -e "s/\.int\.ppi\./.%FOO%.%FOO%/g"; done|grep -v "^${__HOSTNAME}$"`
+SI=`echo "$__SITE"|sed -e "s/[0-9]*//g"`
+MYSITEHOSTS=`echo "${HOSTNAMES}"|grep "\.${__SITE}\."`
+NMSITEHOSTS=`echo "${HOSTNAMES}"|grep -v "\.${__SITE}\."`
+NMHOSTNAMES=''
+__NMSITEHOSTS=''
+
+for line in `echo "${NMSITEHOSTS}"` ; do
+  nmstripped=''
+  echo "${line}"|grep "^${SI}" >/dev/null && nmstripped=`echo "${line}"|sed -e "s/^${SI}//"|sed -e "s/${__DNSDOMAIN}$//"`
+  if [ "X${nmstripped}" != "X" ] ; then
+    nmsite=`echo "${nmstripped}"|awk -F. {'foo=NF - 1;print $foo'}|sed -e "s/[0-9]*//g"`
+    NMHOSTNAMES="${NMHOSTNAMES}
+${nmsite}${nmstripped}${__DNSDOMAIN}"
+  fi
+done
+
+
+if [ "X${NMHOSTNAMES}" = "X" ] ; then
+  NMSITEHOSTS="${MYSITEHOSTS}
+${NMSITEHOSTS}"
+else
+  NMSITEHOSTS="${MYSITEHOSTS}
+${NMHOSTNAMES}"
+fi
+
+NMSITEHOSTS=`echo "${NMSITEHOSTS}"|grep '.'`
+
+test "X${NMSITEHOSTS}" != "X" && NMSITEHOSTSVALID=`getent hosts ${NMSITEHOSTS}`
+
+CURRSITE="${__SITE}"
+for nmsitehostli in "${NMSITEHOSTSVALID}" ; do
+  ip=`echo "${nmsitehostli}"|awk {'print $1'}`
+  fqdn=`echo "${nmsitehostli}"|awk {'print $2'}`
+  __SITE=''
+  test "X${fqdn}" != "X" && __whichsiteanddomainami ${fqdn} >/dev/null 2>&1
+  SITE="${__SITE}"
+  if [ "X${ip}" != "X" -a "X${fqdn}" != "X" -a "X${SITE}" != "X" ] ; then
+    NMSITEHOSTMATRIX="${NMSITEHOSTMATRIX}
+${ip}|${fqdn}|MY${SITE}IP|MY${SITE}HOSTNAME"
+  fi
+done
+__SITE="${CURRSITE}"
+    
+NMSITEHOSTMATRIX=`echo "${NMSITEHOSTMATRIX}"|grep '.'`
+
+test "X${NMSITEHOSTMATRIX}" != "X" &&  __NMSITEHOSTMATRIX="${NMSITEHOSTMATRIX}"
+
+}
+
+if [ -f /etc/default/kodak.ldapdomain ] ; then
+ __LDAPDN=`cat /etc/default/kodak.ldapdomain`
+else
+ __LDAPDN=`cat /etc/default/ldapdomain`
+fi
+
+if [ -f /etc/default/kodak.sites ] ; then
+ __SITEMATRIX=`cat /etc/default/kodak.sites`
+else
+ __SITEMATRIX=`cat /etc/default/sites`
+fi
+
+echo "${__HOSTNAME}"|${__GREP} -E "(^localhost|^none)" >/dev/null
+__STATUS=$?
+if [ "${__STATUS}" -eq "0" ] ; then
+ __SYSBUILDIP="`grep -i sysbuild /etc/hosts|awk {'print $1'}`"
+ __REVERSEDDOMAIN="`wget -q http://%FOO% -f4-`"
+ echo "${__REVERSEDDOMAIN}"|grep "class" >/dev/null
+ revclassstatus=$?
+ if [ "X${revclassstatus}" = "X0" ] ; then
+  __CLASSIFICATION="s"
+ else
+  __CLASSIFICATION=""
+ fi
+else
+ __HOSTNAMEDOMAIN="`echo $__HOSTNAME|awk -F. {'foo=NF-1;foo2=NF-2;foo3=NF-3;print $foo3"."$foo2"."$foo"."$NF'}|perl -p -e "s/.*\.FOO\./FOO\./g"`"
+ echo "${__HOSTNAMEDOMAIN}"|grep "class" >/dev/null
+ classstatus=$? 
+ if [ "X${classstatus}" = "X0" ] ; then
+  __CLASSIFICATION="s"
+ else
+  __CLASSIFICATION=""
+ fi
+fi
+
+if [ "X${__CLASSIFICATION}" = "X" ] ; then
+ if [ -f /etc/default/kodak.* ] ; then
+  __CLASSIFICATION="s"
+ else
+  __CLASSIFICATION=""
+ fi
+fi
+
+__getepoc()
+{
+if ls ${__GAWK} >/dev/null 2>&1 ; then
+  echo |${__GAWK} '{print systime()}'
+fi
+}
+
+__whichsiteanddomainami()
+{
+host="$1"
+test "X${host}" = "X" && host="${__HOSTNAME}"
+##1ST WE ATTEMPT TO DETERMINE THE SERVERS DNSDOMAIN IN A TRADITIONAL FASHION##
+
+if echo "$__HOSTNAMEDOMAIN"|grep ".FOO." >/dev/null ; then
+ __DNSDOMAIN="$__HOSTNAMEDOMAIN"
+elif echo "$__REVERSEDDOMAIN"|grep ".FOO." >/dev/null ; then
+##IF THE LOCALHOSTNAME ISNT SET YOU ARE PROBABLY BEING JUMPED, SO WE THEN TRY AND REVERSE THE DNSDOMAIN THRU A CGI ON THE JUMP SERVER BY DNS REVERSING THE JUMPSERVERS FQDN##
+ __DNSDOMAIN="$__REVERSEDDOMAIN"
+else
+ echo "Error in:"
+ echo "DNSDOMAIN"
+ echo "$REVERSEDDOMAIN No functional resolver found."
+ return 1
+fi
+
+if echo "${host}"|grep "%FOO%" >/dev/null ; then
+ __SITE=ps1
+ if echo "${host}"|grep "%FOO%" >/dev/null ; then
+  __SITE=ppi
+ fi
+elif echo "${host}"|grep "%FOO%" >/dev/null ; then
+ __SITE=dr1
+ if echo "${host}"|grep "%FOO%" >/dev/null ; then
+  __SITE=ppa
+ fi
+elif echo "${host}"|grep "%FOO%" >/dev/null ; then
+ __SITE=swa1
+else
+ echo "Error in:"
+ echo "/usr/bin/hostname"
+ echo "${host} contains no known datacenter site identifier."
+ echo "Defaulting to __SITE=ps1"
+ __SITE=ps1
+
+ for ipli in `echo "${__MYCLASSBEES}"` ; do
+  sitetest=`echo "${__SITEMATRIX}"|grep "^${ipli}"`
+  siteteststatus=$?
+  if [ "X${siteteststatus}" = "X0" ] ; then
+   __SITE=`echo "${sitetest}"|awk -F\| {'print $2'}`
+  else
+   echo "Error in:"
+   echo "__MYIPLIST"
+   echo "$__MYIPLIST contains no known datacenter ip ranges."
+   echo "Defaulting to __SITE=ps1"
+   __SITE=ps1
+  fi
+ done
+ return 0
+fi
+return 0
+
+}
+
+
+__slapwhoami()
+{
+
+if [ -z "${1}" ] ; then
+ echo "Error in: \$1"
+ echo "\$1 is null."
+ return 1
+fi
+
+_HOSTNAME="$1"
+echo "${_HOSTNAME}"|grep '^X' >/dev/null
+NOLDAPLOOKUP="$?"
+if [ "X${NOLDAPLOOKUP}" != "X0" ] ; then
+ __CUSTOMERBLOB="`__ldapsearchhandler -b ou=${_HOSTNAME},ou=hosts,${__LDAPDN} -LLL`"
+ __STATUS="$?"
+else
+ __CUSTOMERBLOB="LDAPLOOKUPDISABLED"
+ __STATUS="0"
+ _HOSTNAME=`echo "${_HOSTNAME}"|perl -p -e 's/^X//'`
+fi
+
+if [ "${__STATUS}" -ne "0" ] ; then
+ return 1
+else
+ ##__CI=`echo "${__CUSTOMERBLOB}"|grep "^customer: "|perl -p -e "s/^customer\: /customer\=/g"|awk -F\= {'print $2'}`
+
+ NAMINGCONVENTION=`cat /etc/default/namingconvention`
+ for i in `echo "${NAMINGCONVENTION}"` ; do
+  pattern=`echo "${i}"|awk -F\) {'print $1'}`
+  pattern=`echo "${pattern})"`
+  CI=`echo "${i}"|awk -F\) {'print $2'}`
+  nametest=`echo "${_HOSTNAME}"|${__GREP} -E "${pattern}"`
+  nametestatus=$?
+  if [ "X${nametestatus}" = "X0" ] ; then
+   __CI="${CI}"
+   break
+  else
+   __CI="UNKNOWN"
+  fi
+ done
+
+ __cmEnable=`echo "${__CUSTOMERBLOB}"|grep "^cmEnable: "|perl -p -e "s/^cmEnable\: /cmEnable\=/g"|awk -F\= {'print $2'}`
+ if [ -n "${__CI}" -a "X${__CI}" != "XUNKNOWN" ] ; then
+  echo "__CI=${__CI}"
+  if [ -n "${__cmEnable}" ] ; then
+   echo "__cmEnable=${__cmEnable}"
+  fi
+  return 0
+ fi
+return 1
+fi
+}
+
+__slapjob()
+{
+
+ME="$$"
+PREV=`ps -aef|grep "/usr/sbin/slack --no-sync --sleep 3600 slapjob"|grep -v grep|awk {'print $2'}|grep -v "^${ME}$"`
+test "X${PREV}" != "X" && echo "${PREV}"|xargs kill
+
+test "X${PREV}" != "X" && sleep 10
+
+REPREV=`ps -aef|grep "/usr/sbin/slack --no-sync --sleep 3600 slapjob"|grep -v grep|awk {'print $2'}|grep -v "^${ME}$"`
+test "X${REPREV}" != "X" && return
+
+rm -rf /var/cache/slack/roles/slapjob*
+rm -rf /var/lib/slack/stage/roles/slapjob*
+/usr/sbin/slack-cleanup
+
+mkdir -p /var/cache/slack/roles/slapjob$$/scripts
+cp /usr/sbin/slack-slaper /var/cache/slack/roles/slapjob$$/slapjob
+chmod 555 /var/cache/slack/roles/slapjob$$/slapjob
+
+cat >/var/cache/slack/roles/slapjob$$/scripts/postinstall <<__EOF__
+#!/bin/sh
+
+. /etc/default/admin-functions
+##/var/cache/slack/roles/slapjob$$/slapjob --rolelist:global,OS,site,CI,host.run
+/var/cache/slack/roles/slapjob$$/slapjob --rolelist.run
+
+__EOF__
+
+chmod 555 /var/cache/slack/roles/slapjob$$/scripts/postinstall
+
+slack --no-sync --sleep 3600 slapjob$$
+SLACKSTATUS=$?
+if [ "X${SLACKSTATUS}" != "X0" ] ; then
+ if [ "X${__OSNAME}" = "XSunOS" ] ; then
+  /usr/sbin/slack-slaper sysupdate.report
+  /usr/sbin/slack-slaper openldap-client
+ else
+  /usr/sbin/slack-slaper sysupdate.report
+ fi
+fi
+
+}
+
+reporttemplate()
+{
+if [ "X${CKSUM}" = "X" ] ; then
+ echo "CKSUM is null"
+ exit 1
+fi
+
+if [ "X${REPORTZIP}" = "X" ] ; then
+ echo "REPORTZIP is null"
+ exit 1
+fi
+
+if [ ! -f "${REPORTZIP}" ] ; then
+ echo "Error in:{REPORTZIP}"
+ echo "file not found."
+ exit 1
+fi
+
+##cat *.zip|perl -MMIME::Base64 -0777 -ne 'print encode_base64($_)'
+
+hoststemplate="version: 1
+dn: ou=${__HOSTNAME},ou=hosts,${__LDAPDN}
+changetype: modify
+replace: hostdata
+hostdata:< file://${REPORTZIP}
+-
+replace: hostcksum
+hostcksum: ${CKSUM}
+"
+
+##REPORTZIP=`echo "${REPORTZIP}|perl -p -e 's/\//\\\//g'`
+hostnameldapentry=`__ldapsearchhandler -b ou=${__HOSTNAME},ou=hosts,${__LDAPDN} -LLL  2>&1`
+STATUS=$?
+####set -x
+if [ "${STATUS}" -ne "0" ] ; then
+ echo "${hoststemplate}"|${__GREP} -v -E -- '^changetype: modify|^add: |^replace:|^-'|grep '.' > ${LDIFDIR}/hosts.ldif
+echo "objectClass: system" >> ${LDIFDIR}/hosts.ldif; echo "objectClass: top" >> ${LDIFDIR}/hosts.ldif
+ ${__LDAPMODIFY} -a -H ldaps://%FOO%3d.${__DNSDOMAIN} -D "cn=%UPLOADUSR%,ou=profile,${__LDAPDN}" -y ${SYSTEM} -x -f ${LDIFDIR}/hosts.ldif
+ return $?
+else
+ echo "${hoststemplate}" > ${LDIFDIR}/hosts.ldif
+ ${__LDAPMODIFY} -H ldaps://%FOO%3d.${__DNSDOMAIN} -D "cn=%UPLOADUSR%,ou=profile,${__LDAPDN}" -y ${SYSTEM} -x -o nettimeout=20 -f ${LDIFDIR}/hosts.ldif
+ return $?
+fi
+
+
+}

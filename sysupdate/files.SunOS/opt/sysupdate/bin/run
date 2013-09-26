@@ -1,0 +1,14 @@
+#!/bin/bash
+
+
+DATESTRING="$__DATESTRING"
+HOSTNAME="$__HOSTNAME"
+SUDO_USER_MAIL="$__SUDO_USER_MAIL"
+SUDO_USER="$__SUDO_USER"
+/usr/sbin/slack-slaper sudoers-update.install.missing
+
+cd /opt/SYSpca-client && ./pca -X `pwd` -y -i missingrs >./pca.out.${DATESTRING} 2>&1
+
+cat ./pca.out.${DATESTRING}|mailx -s "pca.run ${HOSTNAME}" ${SUDO_USER_MAIL} 2>&1 >/dev/null
+
+/usr/sbin/slack-slaper sysupdate.report%__SUDO_USER=${SUDO_USER}

@@ -1,0 +1,486 @@
+#!/bin/sh
+
+OSNAME=`uname -s`
+if [ "${OSNAME}" != "SunOS" ] ; then
+ echo "Error in: OSNAME"
+ echo "zonecreate is only supported on SunOS 5.10"
+ exit 1
+fi
+
+if [ -f /etc/profile ] ; then
+ . /etc/profile
+fi
+
+zonecfgcreate()
+{
+defaultroutednet=`netstat -rn|grep default|awk {'print $2'}|awk -F\. {'print $1"."$2"."$3".0"'}`
+defaultroutedif=`netstat -rn|awk {'print $1" "$6'}|grep "$defaultroutednet"|awk {'print $2'}`
+zonename=`host $1|awk {'print $1'}`
+zoneip=`host $1|awk {'print $4'}`
+
+
+
+echo $1|grep ".%FOO%.%FOO%." >/dev/null
+if [ $? -ne 0 ] ; then
+ echo "Hostname $1 not Fully Qualified Domain Name."
+ return 1
+fi
+
+host $1 >/dev/null
+if [ $? -ne 0 ] ; then
+ echo "Hostname $1 not found in DNS."
+ return 1
+fi
+
+##  If /cust is zfs them make zoneroot a zfs mount
+ZFSTEST=`zfs list -H|awk {'print $NF'}|awk {'print $1'}|grep "^/cust"`
+if [ -n "${ZFSTEST}" ] ; then
+ custpool="`zfs list -H|perl -p -e "s/\/cust.*/\/cust/g"|awk {'print $1'}|grep "/cust$"|sort -u|head -1`"
+ zfs create -o mountpoint=none ${custpool}/zones
+ mkdir -p /cust/zones
+ zfs create -o mountpoint=/cust/zones/"${zonename}" ${custpool}/zones/"${zonename}"
+else 
+ mkdir -p /cust/zones/"$zonename"
+fi
+
+chmod 700 /cust/zones/"$zonename";chown root:other /cust/zones
+
+cat > /cust/zones/"$zonename"-zone.cfg << __EOF__
+create -b
+set zonepath=/cust/zones/$zonename
+set autoboot=true
+set ip-type=shared
+add fs
+set dir=/cust/home
+set special=/cust/home
+set type=lofs
+add options nosuid,nodevices
+end
+add net
+set address=$zoneip
+set physical=$defaultroutedif
+end
+__EOF__
+return 0
+}
+
+zoneadminstall()
+{
+zonename=`host $1|awk {'print $1'}`
+zoneshortname=`host $1|awk {'print $1'}|awk -F\. {'print $1'}`
+zoneip=`host $1|awk {'print $4'}`
+zonenetwork=`echo $zoneip|awk -F\. {'print $1"."$2"."$3".0"'}`
+zonecfgfile=/cust/zones/"$zonename"-zone.cfg
+zoneinstalllog=/cust/zones/"$zonename"-install.log
+zonednsdomainname=`echo $zonename|sed -e "s/$zoneshortname\.//g"`
+zonednssearchdomain=`echo $zonename|sed -e "s/$zoneshortname\.//g"`
+# echo $zonednsdomainname|grep "int.dr1" >/dev/null
+# if [ $? -eq 0 ] ; then
+#zonednsnameservers=%FOO%.20.37,%FOO%.28.39,%FOO%.28.40
+# fi
+# echo $zonednsdomainname|grep "int.ps1" >/dev/null
+# if [ $? -eq 0 ] ; then
+#zonednsnameservers=%FOO%.28.39,%FOO%.28.40,%FOO%.20.37
+# fi
+zonednsnameservers=`grep "^nameserver " /etc/resolv.conf|awk {'print $2'}`
+dnstest=`echo "${zonednsnameservers}"|wc -l|awk {'print $1'}`
+if [ "${dnstest}" -gt "1" ] ; then
+ zonednsnameservers=`echo "${zonednsnameservers}"|perl -p -e "s/\n/\,/g"|perl -p -e "s/,$//g"`
+fi
+zonedefaultroute=`echo $zoneip|awk -F\. {'print $1"."$2"."$3".1"'}`
+zonesysidcfg=/cust/zones/${zonename}-zone-sysidcfg
+zoneroot=/cust/zones/${zonename}/root
+roothash=`grep "^root:" /etc/shadow|awk -F\: {'print $2'}`
+
+
+
+ifconfig -a|awk {'print $2'}|grep "$zoneip"
+if [ $? -eq 0 ] ; then
+ echo "IP $zoneip for zone $zonename is already in use on this server."
+ exit 1
+fi
+
+ping $zonename
+if [ $? -eq 0 ] ; then
+ echo "IP $zoneip for zone $zonename is already in use on the network."
+ exit 1
+fi
+
+cat /etc/hosts|grep "$zoneip" >/dev/null
+if [ $? -eq 0 ] ; then
+ echo "IP $zoneip for zone $zonename is already in use /etc/hosts."
+ exit 1
+fi
+
+cat /etc/hosts|grep "$zonename" >/dev/null
+if [ $? -eq 0 ] ; then
+ echo "Hostname $zonename for zone $zonename is already in use /etc/hosts."
+ exit 1
+fi
+
+cat /etc/hosts|grep "$zoneshortname" >/dev/null
+if [ $? -eq 0 ] ; then
+ echo "Shorthostname $zoneshortname for zone $zonename is already in use /etc/hosts."
+ exit 1
+fi
+
+echo "$zoneip            $zonename            $zoneshortname" >> /etc/hosts
+zonecfg -z $zonename -f $zonecfgfile
+cat >$zonesysidcfg <<__EOF__
+name_service=DNS
+{domain_name=$zonednsdomainname
+name_server=$zonednsnameservers
+search=$zonednssearchdomain}
+nfs4_domain=dynamic
+system_locale=C
+security_policy=NONE
+terminal=vt100
+timezone=UTC
+timeserver=localhost
+root_password=$roothash
+network_interface=primary { hostname=$zonename
+                            netmask=255.255.255.0
+                            default_route=$zonedefaultroute
+                            protocol_ipv6=no }
+__EOF__
+
+##set -x
+mkdir -p /tmp/zonecreate$$-${zonename}/build
+echo "${jconf}" > /tmp/zonecreate$$-${zonename}/build/jconfurl
+cp /var/sadm/system/logs/* /tmp/zonecreate$$-${zonename}/build
+rm /tmp/zonecreate$$-${zonename}/build/*log*
+cd /var/cache/slack/roles
+##WGET="wget.`uname -p`"
+profilename=`echo "${jconf}"|awk -F? {'print $2'}`
+if [ -z "${profilename}" ] ; then
+ profilename=jumpprofile
+fi
+wget --connect-timeout=7 --tries=3 -r -l 1 -nd "${jconf}" -O - > ./${profilename}.zip 2> /tmp/out$$
+wgettest=`cat /tmp/out$$|grep "^Downloaded:"`
+
+if [ -z "${wgettest}" ] ; then
+ echo "Error in: wgettest"
+ echo "unknown error while downloading jumpstart info"
+ exit
+fi
+
+if echo "${wgettest}"|grep -E '0 bytes|0 files' >/dev/null ; then
+ echo "Error in: wgettest"
+ echo "error connecting to jumpserver url."
+ exit
+fi
+
+unzip -oq ./${profilename}.zip
+uzipstatus=$?
+if [ "${uzipstatus}" -ne "0" ] ; then
+ echo "Error in: ${profilename}.zip"
+ echo "error while unziping."
+ exit
+fi
+
+if [ -d /opt/jumpstart ] ; then
+ mv /opt/jumpstart /opt/jumpstart`date +%m_%d_%Y_%H_%M_%S`
+fi
+
+/usr/sbin/slack --no-sync ${profilename}
+slackstatus=$?
+if [ "${slackstatus}" -ne "0" ] ; then
+ echo "Error in: slackrole ${profilename}"
+ echo "error installing slackrole"
+ exit
+fi
+
+cp -R /opt/jumpstart/* /tmp/zonecreate$$-${zonename}/build
+if [ -f /opt/jumpstart/.??* ] ; then
+ cp -R /opt/jumpstart/.??* /tmp/zonecreate$$-${zonename}/build
+fi
+
+cat >/tmp/zonecreate$$-${zonename}/build/S99runonce <<"__EOF__"
+#!/bin/sh
+
+PATH=$PATH:/usr/sfw/bin/:/usr/local/bin
+if [ ! -f /var/sadm/system/logs/jconfurl -o -z "`cat /var/sadm/system/logs/jconfurl`" ] ; then
+ echo "Error in /var/sadm/system/logs/jconfurl" >> /var/sadm/system/logs/finish.log.err
+ echo "file not found or null" >> /var/sadm/system/logs/finish.log.err
+ exit
+fi
+
+jconf=`cat /var/sadm/system/logs/jconfurl`
+cd /var/sadm/system/logs/
+#WGET="wget.`uname -p`"
+profilename=`echo "${jconf}"|awk -F? {'print $2'}`
+if [ -z "${profilename}" ] ; then
+ profilename=jumpprofile
+fi
+#./$WGET --connect-timeout=7 --tries=3 -r -l 1 -nd "${jconf}" -O - > ./${profilename}.zip 2> /tmp/out$$
+#wgettest=`cat /tmp/out$$|grep "^Downloaded:"`
+
+#if [ -z "${wgettest}" ] ; then
+# echo "Error in: wgettest" >> /var/sadm/system/logs/finish.log.err
+# echo "unknown error while downloading jumpstart info" >> /var/sadm/system/logs/finish.log.err
+# exit
+#fi
+
+#if echo "${wgettest}"|grep -E '0 bytes|0 files' >/dev/null ; then
+# echo "Error in: wgettest" >> /var/sadm/system/logs/finish.log.err
+# echo "error connecting to jumpserver url." >> /var/sadm/system/logs/finish.log.err
+# exit
+#fi
+
+cd /var/sadm/system/logs/
+#unzip -ojq ./${profilename}.zip
+#uzipstatus=$?
+#if [ "${uzipstatus}" -ne "0" ] ; then
+# echo "Error in: ${profilename}.zip" >> /var/sadm/system/logs/finish.log.err
+# echo "error while unziping." >> /var/sadm/system/logs/finish.log.err
+# exit
+#fi
+
+SYSBUILDIP="`echo "${jconf}"|awk -F\: {'print $2'}|perl -p -e "s/\/\///g"|awk -F\/ {'print $1'}`"
+cp /etc/hosts /etc/hosts.orig$$
+cat /etc/hosts.orig$$|grep -v "sysbuild" > /etc/hosts
+echo "${SYSBUILDIP}      sysbuild" >> /etc/hosts
+
+answer="profile.cfg"
+if [ ! -f ./PATCHES ] ; then
+ rm -rf ./PATCHES
+ grep "^PATCHES=" ./${answer} > ./PATCHES
+fi
+
+if [ ! -f ./PATCHDATA ] ; then
+ rm -rf ./PATCHDATA
+ grep "^PATCHDATA=" ./${answer} > ./PATCHDATA
+fi
+
+
+cat ./${answer}|grep -v "^PATCHES="|grep -v "^PATCHDATA="|grep -v -- "^url.*--url.*http"|sed -n '/\%post/,$p'|grep -v "^%post$" > /var/sadm/system/logs/custom_finish
+chmod 750 /var/sadm/system/logs/*
+cd /
+if [ -f /var/sadm/system/logs/postinstall ] ; then
+ if [ ! -f /var/sadm/system/logs/finish.log ] ; then
+  rm -rf /var/sadm/system/logs/finish.log
+  touch /var/sadm/system/logs/finish.log
+  /var/sadm/system/logs/postinstall >> /var/sadm/system/logs/finish.log 2>&1
+  wait $!
+  sleep 2
+  init 6
+ fi
+else
+ if [ ! -f /var/sadm/system/logs/finish.log ] ; then
+  rm -rf /var/sadm/system/logs/finish.log
+  touch /var/sadm/system/logs/finish.log
+  /var/sadm/system/logs/custom_finish >> /var/sadm/system/logs/finish.log 2>&1
+  wait $!
+  sleep 2
+  init 6
+ fi
+fi
+
+nohup /var/sadm/system/logs/PostBuild-SOL10.sh >>/var/sadm/system/logs/postbuild.log 2>&1 &
+sleep 5
+exit 0
+__EOF__
+
+if [ -z "${foregroundFlag}" ] ; then
+
+(zoneadm -z $zonename install 2>&1 >> $zoneinstalllog;wait $!;cp $zonesysidcfg $zoneroot/etc/sysidcfg 2>&1 >> $zoneinstalllog;cd /;tar -cvf etc.tar /etc/passwd /etc/group /etc/shadow /usr/local/etc/sudoers 2>&1 >> $zoneinstalllog;cp /etc.tar $zoneroot 2>&1 >> $zoneinstalllog;mkdir -p $zoneroot/var/sadm/system/logs 2>&1 >> $zoneinstalllog;touch $zoneroot/etc/.NFS4inst_state.domain 2>&1 >> $zoneinstalllog;cp /tmp/zonecreate$$-${zonename}/build/* $zoneroot/var/sadm/system/logs 2>&1 >> $zoneinstalllog;cp /tmp/zonecreate$$-${zonename}/build/S99runonce $zoneroot/etc/rc3.d/ 2>&1 >> $zoneinstalllog;chown root:root $zoneroot/etc/rc3.d/S99runonce;chmod 750 $zoneroot/etc/rc3.d/S99runonce;chown root:root $zoneroot/var/sadm/system/logs/*;chmod 750 $zoneroot/var/sadm/system/logs/*; zoneadm -z $zonename boot 2>&1 >> $zoneinstalllog) &
+
+else
+
+zoneadm -z $zonename install 2>&1 >> $zoneinstalllog;wait $!;cp $zonesysidcfg $zoneroot/etc/sysidcfg 2>&1 >> $zoneinstalllog;cd /;tar -cvf etc.tar /etc/passwd /etc/group /etc/shadow /usr/local/etc/sudoers 2>&1 >> $zoneinstalllog;cp /etc.tar $zoneroot 2>&1 >> $zoneinstalllog;mkdir -p $zoneroot/var/sadm/system/logs 2>&1 >> $zoneinstalllog;touch $zoneroot/etc/.NFS4inst_state.domain 2>&1 >> $zoneinstalllog;cp /tmp/zonecreate$$-${zonename}/build/* $zoneroot/var/sadm/system/logs 2>&1 >> $zoneinstalllog;cp /tmp/zonecreate$$-${zonename}/build/S99runonce $zoneroot/etc/rc3.d/ 2>&1 >> $zoneinstalllog;chown root:root $zoneroot/etc/rc3.d/S99runonce;chmod 750 $zoneroot/etc/rc3.d/S99runonce;chown root:root $zoneroot/var/sadm/system/logs/*;chmod 750 $zoneroot/var/sadm/system/logs/*; zoneadm -z $zonename boot 2>&1 >> $zoneinstalllog
+
+fi
+#zoneadm -z $zonename install
+#cp $zonesysidcfg $zoneroot/etc/sysidcfg
+#cd /
+#tar -cvf etc.tar /etc/passwd /etc/group /etc/shadow /usr/local/etc/sudoers
+#cp /etc.tar $zoneroot
+#mkdir -p $zoneroot/cust/install/opsware
+
+}
+
+#zonepostinstall()
+#{
+###set -x
+#mkdir -p /tmp/zonecreate$$-${zonename}/build
+#echo "${jconf}" > /tmp/zonecreate$$-${zonename}/build/jconfurl
+#cp /var/sadm/system/logs/* /tmp/zonecreate$$-${zonename}/build
+#rm /tmp/zonecreate$$-${zonename}/build/*log*
+#cd /var/cache/slack/roles
+###WGET="wget.`uname -p`"
+#profilename=`echo "${jconf}"|awk -F? {'print $2'}`
+#if [ -z "${profilename}" ] ; then
+# profilename=jumpprofile
+#fi
+#wget --connect-timeout=7 --tries=3 -r -l 1 -nd "${jconf}" -O - > ./${profilename}.zip 2> /tmp/out$$
+#wgettest=`cat /tmp/out$$|grep "^Downloaded:"`
+#
+#if [ -z "${wgettest}" ] ; then
+# echo "Error in: wgettest"
+# echo "unknown error while downloading jumpstart info"
+# exit
+#fi
+#
+#if echo "${wgettest}"|grep -E '0 bytes|0 files' >/dev/null ; then
+# echo "Error in: wgettest"
+# echo "error connecting to jumpserver url."
+# exit
+#fi
+#
+#unzip -oq ./${profilename}.zip
+#uzipstatus=$?
+#if [ "${uzipstatus}" -ne "0" ] ; then
+# echo "Error in: ${profilename}.zip"
+# echo "error while unziping."
+# exit
+#fi
+#
+#if [ -d /opt/jumpstart ] ; then
+# mv /opt/jumpstart /opt/jumpstart`date +%m_%d_%Y_%H_%M_%S`
+#fi
+#
+#/usr/sbin/slack --no-sync ${profilename}
+#slackstatus=$?
+#if [ "${slackstatus}" -ne "0" ] ; then
+# echo "Error in: slackrole ${profilename}"
+# echo "error installing slackrole"
+# exit
+#fi
+#
+#cp -R /opt/jumpstart/* /tmp/zonecreate$$-${zonename}/build 
+#if [ -f /opt/jumpstart/.??* ] ; then
+# cp -R /opt/jumpstart/.??* /tmp/zonecreate$$-${zonename}/build
+#fi
+#
+#cat >/tmp/zonecreate$$-${zonename}/build/S99runonce <<"__EOF__"
+##!/bin/sh
+#
+#PATH=$PATH:/usr/sfw/bin/:/usr/local/bin
+#if [ ! -f /var/sadm/system/logs/jconfurl -o -z "`cat /var/sadm/system/logs/jconfurl`" ] ; then
+# echo "Error in /var/sadm/system/logs/jconfurl" >> /var/sadm/system/logs/finish.log.err
+# echo "file not found or null" >> /var/sadm/system/logs/finish.log.err
+# exit
+#fi
+#
+#jconf=`cat /var/sadm/system/logs/jconfurl`
+#cd /var/sadm/system/logs/
+##WGET="wget.`uname -p`"
+#profilename=`echo "${jconf}"|awk -F? {'print $2'}`
+#if [ -z "${profilename}" ] ; then
+# profilename=jumpprofile
+#fi
+##./$WGET --connect-timeout=7 --tries=3 -r -l 1 -nd "${jconf}" -O - > ./${profilename}.zip 2> /tmp/out$$
+##wgettest=`cat /tmp/out$$|grep "^Downloaded:"`
+#
+##if [ -z "${wgettest}" ] ; then
+## echo "Error in: wgettest" >> /var/sadm/system/logs/finish.log.err
+## echo "unknown error while downloading jumpstart info" >> /var/sadm/system/logs/finish.log.err
+## exit
+##fi
+#
+##if echo "${wgettest}"|grep -E '0 bytes|0 files' >/dev/null ; then
+## echo "Error in: wgettest" >> /var/sadm/system/logs/finish.log.err
+## echo "error connecting to jumpserver url." >> /var/sadm/system/logs/finish.log.err
+## exit
+##fi
+#
+#cd /var/sadm/system/logs/
+##unzip -ojq ./${profilename}.zip
+##uzipstatus=$?
+##if [ "${uzipstatus}" -ne "0" ] ; then
+## echo "Error in: ${profilename}.zip" >> /var/sadm/system/logs/finish.log.err
+## echo "error while unziping." >> /var/sadm/system/logs/finish.log.err
+## exit
+##fi
+#
+#SYSBUILDIP="`echo "${jconf}"|awk -F\: {'print $2'}|perl -p -e "s/\/\///g"|awk -F\/ {'print $1'}`"
+#cp /etc/hosts /etc/hosts.orig$$
+#cat /etc/hosts.orig$$|grep -v "sysbuild" > /etc/hosts
+#echo "${SYSBUILDIP}      sysbuild" >> /etc/hosts
+#
+#answer="profile.cfg"
+#if [ ! -f ./PATCHES ] ; then
+# rm -rf ./PATCHES
+# grep "^PATCHES=" ./${answer} > ./PATCHES
+#fi
+#
+#if [ ! -f ./PATCHDATA ] ; then
+# rm -rf ./PATCHDATA
+# grep "^PATCHDATA=" ./${answer} > ./PATCHDATA
+#fi
+# 
+#
+#cat ./${answer}|grep -v "^PATCHES="|grep -v "^PATCHDATA="|grep -v -- "^url.*--url.*http"|sed -n '/\%post/,$p'|grep -v "^%post$" > /var/sadm/system/logs/custom_finish
+#chmod 750 /var/sadm/system/logs/*
+#cd /
+#if [ -f /var/sadm/system/logs/postinstall ] ; then
+# if [ ! -f /var/sadm/system/logs/finish.log ] ; then
+#  rm -rf /var/sadm/system/logs/finish.log
+#  touch /var/sadm/system/logs/finish.log
+#  /var/sadm/system/logs/postinstall >> /var/sadm/system/logs/finish.log 2>&1
+#  wait $!
+#  sleep 2
+#  init 6
+# fi
+#else
+# if [ ! -f /var/sadm/system/logs/finish.log ] ; then
+#  rm -rf /var/sadm/system/logs/finish.log
+#  touch /var/sadm/system/logs/finish.log
+#  /var/sadm/system/logs/custom_finish >> /var/sadm/system/logs/finish.log 2>&1
+#  wait $!
+#  sleep 2
+#  init 6
+# fi
+#fi
+#
+#nohup /var/sadm/system/logs/PostBuild-SOL10.sh >>/var/sadm/system/logs/postbuild.log 2>&1 &
+#sleep 5
+#exit 0
+#__EOF__
+#
+#}
+
+##############MAIN ROUTINE##############
+args=`echo "${*}"|perl -p -e "s/ \-\-/\n/g;s/\-\-//g"`
+#zonefqdnlist=`echo $1|sed -e "s/\,/ /g"`
+jconf=`echo "${args}"|grep "^jconf "|awk {'print $2'}`
+zonefqdnlist=`echo "${args}"|grep "^zonefqdnlist "|awk {'print $2'}|sed -e "s/\,/ /g"`
+foregroundFlag=`echo "${args}"|grep "^FG"`
+
+if [ -z "${args}" -o -z "${jconf}" -o -z "${zonefqdnlist}" ] ; then
+ echo "usage:  ./zonecreate --zonefqdnlist fqdn-of-zone,fqdn-of-zone,fqdn-of-zone --jconf http://foo/cgi-bin/slack-slaper-proxy?jumpstart"
+ exit 1
+fi
+
+if wget --connect-timeout=7 --tries=3 -r -l 1 -nd "${jconf}" -O - 2>&1|grep "^Downloaded:"|grep -E '0 bytes|0 files' >/dev/null ; then
+ echo "Error in: \$jconf"
+ echo "error connecting to jumpserver url."
+ exit 1
+fi
+
+if [ -z `wget --connect-timeout=7 --tries=3 -r -l 1 -nd "${jconf}" -O - 2>&1|grep "^Downloaded:"` ] ; then
+ echo "Error in: \$jconf"
+ echo "error connecting to jumpserver url."
+ exit 1
+fi
+
+
+
+for i in $zonefqdnlist; do
+ zonecfgcreate $i
+ if [ $? -ne 0 ] ; then
+  exit 1
+ fi
+
+ zoneadminstall $i
+ if [ $? -ne 0 ] ; then
+  exit 1
+ fi
+
+# zonepostinstall $i
+# if [ $? -ne 0 ] ; then
+#  exit 1
+# fi
+done
+
+exit 0

@@ -1,0 +1,166 @@
+#!/bin/sh
+
+###################
+# Global Variables#
+###################
+
+ARGS="$1"
+GSED='/opt/sfw/bin/gsed'
+subDir="$$"
+mkdir -p /tmp/$$
+
+#############
+# Begin if  #
+#############
+
+if [ "X${ARGS}" = "X" ] ; then
+ if [ -f catalog ] ;then
+  rm -f catalog.bak*
+  mv catalog catalog.bak$$
+ fi
+
+ if [ -f descriptions ] ;then
+  rm -f descriptions.bak*
+  mv descriptions descriptions.bak$$
+ fi
+ PKGLIST=`file *|grep -E "(:*package datastream|:*gzip)"|awk {'print $1$2$3$4$5$6$7$8$9'}`
+else
+ cat catalog|awk {'print $4'}|grep "^`basename ${ARGS}`$" >/dev/null
+ PKGTEST="$?"
+ if [ "X${PKGTEST}" = "X0" ] ; then
+  echo "${ARGS} is already in catalog."
+  rm -rf /tmp/$$
+  exit 1
+ fi
+ PKGLIST=`file ${ARGS}|grep -E "(:*package datastream|:*gzip)"|awk {'print $1$2$3$4$5$6$7$8$9'}`
+fi
+
+##########
+# End if #
+##########
+
+NAME="."
+DESC="."
+
+
+##############
+# Begin loop #
+##############
+
+#loop thru every package in current directory and get various pieces of data such as pkg name version etc
+for i in `echo "${PKGLIST}"` ; do
+ PKGINFO=""
+ PKGMETA=""
+ iPKG=`echo "${i}"|awk -F\: {'print $1'}`
+ type=`echo "${i}"|awk -F\: {'print $2'}`
+ subDir=`expr $subDir + 1`
+ mkdir -p /tmp/$$/$subDir
+ case "${type}" in
+  *gzip*)
+gzcat "${iPKG}"| pkgtrans -i /dev/stdin /tmp/$$/$subDir all
+       PKGMETA=`gunzip -c "${iPKG}"|strings |${GSED} -n '/...............................................................................*install\/depend$/,/...............................................................................*000000/p`
+  ;;
+  *package*datastream*)
+
+cat "${iPKG}" | pkgtrans -i /dev/stdin /tmp/$$/$subDir all
+
+       PKGMETA=`strings "${iPKG}"|${GSED} -n '/...............................................................................*install\/depend$/,/...............................................................................*000000/p`
+ esac 
+
+ PKGINFO=`cat /tmp/$$/$subDir/*/pkginfo`
+ 
+
+ test "X${PKGINFO}" = "X" -o "X${iPKG}" = "X" -o "X${type}" = "X" && continue
+ mkdir -p ./repodata
+
+
+ 
+  PKG=`echo "${PKGINFO}"|grep '^PKG='|perl -p -e 's/^PKG=//g'|sort -u|head -1`
+ 
+ if [ "X${PKG}" = "X" ] ; then
+
+
+ 
+  PKG=`echo "${PKGINFO}"|grep '^NAME='|perl -p -e 's/^NAME=//g'|sort -u|head -1`
+ fi
+
+  VERSION=`echo "${PKGINFO}"|grep '^VERSION='|perl -p -e 's/^VERSION=//g'|sort -u|head -1`
+
+  SUNW_PRODVERS=`echo "${PKGINFO}"|grep "^SUNW_PRODVERS="|perl -p -e "s/^SUNW_PRODVERS=//g"|sort -u|head -1|sed -e "s/[^0-9,^.]/\./g"|sed -e "s/\,/./g"|sed -e "s/\.\.*/\./g"|sed -e "s/^\.//g"|sed -e "s/\.$//g"|grep '.'`
+ test "X${SUNW_PRODVERS}" != "X" && VERSION="${VERSION}.${SUNW_PRODVERS}"
+ DESC=`echo "${PKGINFO}"|grep '^DESC='|perl -p -e 's/^DESC=//g'|sort -u|head -1`
+ if [ "X${DESC}" = "X" ] ; then
+  DESC='.'
+ fi
+#echo "${PKG}"
+
+#try to find if package already exists
+cat catalog | awk {'print $1" "$2'} | grep "${PKG} ${VERSION}"
+TESTEXST="$?"
+
+############
+# Begin if #
+############
+
+# if package is already in catalog will continue to next package else will add package to catalog
+ if [ "X${TESTEXST}" = "X0" ] ; then
+  echo "For Cereal? ${PKG} ${VERSION} already exists! Did you even try a pkg-get -a !?"
+  continue
+ else
+      if echo "${iPKG}"|grep MEDIA >/dev/null ;then
+         echo "${PKG}    ${VERSION}    ${PKG}    ${iPKG}" >> catalog
+         echo "${PKG}    -    MEDIA ${DESC}" >>         descriptions
+      else
+         echo "${PKG}    ${VERSION}    ${PKG}    ${iPKG}" >> catalog
+         echo "${PKG}    -    ${DESC}" >>         descriptions
+      fi
+ fi
+##########
+# End if #
+##########
+
+#Below 3 lines will only execute if TESTEXST is 0
+echo "${PKGMETA}" > "./repodata/${PKG}_${VERSION}_${iPKG}.repo.txt"
+echo "${PKGINFO}" >> "./repodata/${PKG}_${VERSION}_${iPKG}.repo.txt"
+cat /tmp/$$/$subDir/*/pkgmap >> "./repodata/${PKG}_${VERSION}_${iPKG}.repo.txt"
+
+done
+
+############
+# End Loop #
+############
+
+/usr/xpg4/bin/id -u -n|grep 'root' >/dev/null
+ROOTSTATUS="$?"
+
+############
+# Begin if #
+############
+
+#fix permissons and ownership for catalog file
+
+if [ "X${ROOTSTATUS}" = "X0" ] ; then
+ chown svn:svn catalog descriptions
+ chmod 775 catalog descriptions
+fi
+
+##########
+# End if #
+##########
+
+
+############
+# Clean-up #
+############
+
+rm -rf /tmp/$$
+
+
+#####################################
+# Old no longer used blocks of code #
+#####################################
+
+#PKGINFO=`strings "${iPKG}"|sed '/pkgmap/,$d'|sed -n '/\/pkginfo/,$p'`
+#PKG=`echo "${PKGINFO}"|grep '^NAME='|perl -p -e 's/^NAME=//g'|perl -p -e 's/\-/\_/g'|sort -u|head -1`
+#PKG=`echo "${PKGINFO}"|grep '^PKG='|perl -p -e 's/^PKG=//g'|perl -p -e 's/\-/\_/g'|sort -u|head -1`
+#/bin/rm -rf /tmp/$$pkg-get-helper.*;

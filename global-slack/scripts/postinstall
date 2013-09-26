@@ -1,0 +1,41 @@
+#!/bin/sh
+
+
+if [ -f /etc/default/admin-functions ] ; then
+ . /etc/default/admin-functions
+fi
+
+. /etc/default/slack-functions
+
+######MAIN ROUTINE######
+
+SLACKROLE="${*}"
+
+#######INSERT YOUR CODE HERE######
+if [ -f /etc/slack-slaper.conf.SIPR ] ; then
+ cat /etc/slack-slaper.conf.SIPR > /etc/slack-slaper.conf
+fi
+
+chown root:root /etc/slack-slaper.conf*
+chmod 555 /etc/slack-slaper.conf*
+
+chown root:root /etc/default/slack-functions
+chmod 555 /etc/default/slack-functions
+
+chown root:root /usr/sbin/slack*
+chmod 555 /usr/sbin/slack*
+set -x
+OSNAME=`uname -s`
+
+if [ "${OSNAME}" != "Linux" ] ; then
+ if ls -d /usr/local/etc/openldap/cacerts/????????.0 >/dev/null 2>&1 ; then
+  perl -pi -e "s/ldap\:/ldaps\:/g" /etc/slack-slaper.conf
+ fi
+else
+ if ls -d /etc/openldap/cacerts/????????.0 >/dev/null 2>&1 ; then
+  perl -pi -e "s/ldap\:/ldaps\:/g" /etc/slack-slaper.conf
+ fi
+fi
+set +x
+slacksum "${SLACKROLE}"
+

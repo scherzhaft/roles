@@ -1,0 +1,6 @@
+#!/bin/sh
+
+cd /tmp
+/usr/bin/nohup /usr/sbin/slack-slaper sysupdate.report  >/dev/null 2>/dev/null < /dev/null &
+
+

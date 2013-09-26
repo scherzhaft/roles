@@ -1,0 +1,35 @@
+#!/bin/bash
+
+/usr/sbin/slack-slaper global-slack
+/usr/sbin/slack-slaper global-solaris-adminfunctions
+
+. /etc/default/SYSconstants
+
+case "${__OSNAME}" in
+ SunOS)
+  if [ -L /opt/SYSpca-client/SYScurrrev.xref ] ; then
+   rm -f /opt/SYSpca-client/SYScurrrev.xref
+  else
+   PATCHFILECKSUM=`cksum /opt/SYSpca-client/SYScurrrev.xref 2>&1`
+   STATUS=$?
+   if [ "${STATUS}" = "0" ] ; then
+    PATCHFILECKSUM=`echo "${PATCHFILECKSUM}"|awk {'print $1"."$2'}`
+    headerdate=`head -1 /opt/SYSpca-client/SYScurrrev.xref|grep "PATCHDIAG"|perl -p -e "s/\#//g"|awk {'print $NF'}|perl -p -e "s/\//\_/g"`
+    if [ "X${headerdate}" != "X" ] ; then
+     destfilename="patchdiag.xref.${headerdate}.${PATCHFILECKSUM}"
+    else
+     destfilename="patchdiag.xref.${PATCHFILECKSUM}"
+    fi
+    mv /opt/SYSpca-client/SYScurrrev.xref /opt/SYSpca-client/${destfilename}.xref
+   fi
+  fi
+ ;;
+
+ Linux)
+  echo foo
+ ;;
+ *)
+  echo "unknown OS"
+  exit 1
+ 
+esac  

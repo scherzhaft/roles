@@ -1,0 +1,11 @@
+#!/bin/bash
+
+. /etc/default/SYSconstants
+
+##set -x
+if [ "X${__SITE}" = "Xppa" ] ; then
+  perl -pi -e "s/\%FOO\%/${__FOO}/g" etc/pkg-get.conf
+else
+  perl -pi -e "s/\%FOO\%/${__FOO1}/g" etc/pkg-get.conf
+fi
+

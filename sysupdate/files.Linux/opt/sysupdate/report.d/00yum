@@ -1,0 +1,17 @@
+#!/bin/sh
+
+
+UPDATELIST=`/usr/bin/yum check-update|grep -v -E '(\[|\])'|grep -- '-'`
+
+if [ "X${UPDATELIST}" != "X" ] ; then
+ UPDATEQTY=`echo "${UPDATELIST}"|wc -l|awk {'print $1'}`
+else
+ UPDATEQTY='0'
+fi
+
+OELSYNCDATE=`cat /opt/sysupdate/config.d/oelSyncDate 2>/dev/null`
+if [ "X${OELSYNCDATE}" = "X" ] ; then
+ OELSYNCDATE='foo'
+fi
+
+printf "Using repodata from ${OELSYNCDATE}\nHost: ${__HOSTNAME} (${__OSNAME}/`uname -r`/${__ARCH})\nList: check-update (${UPDATEQTY}/9999)\n\n${UPDATELIST}" >${SPOOL}/yum.patch.report

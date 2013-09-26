@@ -1,0 +1,80 @@
+#!/bin/bash
+
+loadallmodules()
+{
+. /etc/default/slack-functions
+. /etc/default/admin-functions
+
+
+HOURS=`echo ${DATESTRING}|awk -F_ {'print $4'}`
+MINS=`echo ${DATESTRING}|awk -F_ {'print $5'}`
+SECS=`echo ${DATESTRING}|awk -F_ {'print $6'}`
+HOURS2SECS=`expr ${HOURS} \* 60 \* 60`
+MINS2SECS=`expr ${MINS} \* 60`
+TIMEINSECS=`expr ${HOURS2SECS} + ${MINS2SECS} + ${SECS}`
+}
+
+__getrev()
+{
+loadallmodules
+
+REVDATE=`echo $__DATESTRING|awk -F\_ {'print $3"."$1"."$2'}`
+echo "${REVDATE}.${TIMEINSECS}"
+}
+
+loadallmodules
+
+__TIMEINSECS="${TIMEINSECS}"
+__DATESTRING="${DATESTRING}"
+__slapwhoami ${__HOSTNAME} >/dev/null 2>/dev/null
+__whichsiteanddomainami >/dev/null 2>&1
+__SUPPORT="FOO${__CLASSIFICATION}01.FOO.${__SITE}.${__DNSDOMAIN}"
+__SHORTSUPPORT=`echo "${__SUPPORT}"|awk -F\. {'print $1'}`
+__SITES=`echo "${__SITEMATRIX}"|awk -F\| {'print $2'}`
+__SUPPORTSERVERS=`echo "${__SITES}"|perl -p -e "s/^/FOO${__CLASSIFICATION}01\.FOO\./g"|perl -p -e "s/\n/\.${__DNSDOMAIN}\n/g"`
+
+nmsitehosts >/dev/null 2>&1
+
+WHOAMI=`who am i|awk {'print $1'}`
+if [ "X${WHOAMI}" != "X" ] ; then
+ SUDO_USER="${WHOAMI}"
+fi
+if [ "X${LOGNAME}" != "X" -a "X${SUDO_USER}" = "X" ] ; then
+ SUDO_USER="${LOGNAME}"
+fi
+getent passwd ${SUDO_USER}|${__GREP} "^${SUDO_USER}:x:[0-9]*:25000:" >/dev/null
+GIDSTATUS="$?"
+
+if [ "X${SUDO_USER}" != "X" -a "X${GIDSTATUS}" = "X0" ] ; then
+ __SUDO_USER_MAIL=`__ldapsearchhandler -b uid=${SUDO_USER},ou=people,${__LDAPDN} mail|grep "^mail:"|awk -F\: {'print $2'}|awk {'print $1'}`
+ __SUDO_USER="${SUDO_USER}"
+elif [ "X${SUDO_USER}" = "X" -a "${__OSNAME}" = "SunOS" ] ; then
+ PID=$$
+ foo=`ptree $PID|awk {'print $1'}|perl -p -e "s/\n/\,/g"|perl -p -e "s/\,$//g"`
+ processinfo=`ps -f -p ${foo}`
+ listlength=`echo "${processinfo}"|wc -l|awk {'print $1'}`
+ lengthminus=`expr "${listlength}" - 1`
+ userlist=`ps -f -p ${foo}|tail -${lengthminus}|awk {'print $1'}|sort -u|grep -v "^root$"`
+ for i in `echo "${userlist}"` ; do
+  usermailsearch=`__ldapsearchhandler -b uid=${i},ou=people,${__LDAPDN} mail`
+  SEARCHSTATUS=$?
+  mailattrib=`echo "${usermailsearch}"|grep "^mail:.*"`
+  MAILSTATUS=$?
+  if [ "X${SEARCHSTATUS}" = "X0" -a "X${MAILSTATUS}" = "X0" ] ; then
+   __SUDO_USER_MAIL=`echo "${mailattrib}"|awk -F\: {'print $2'}|awk {'print $1'}`
+   __SUDO_USER="${i}"
+   break
+  fi
+ done
+fi
+
+for i in `echo "${__SITES}"` ; do
+ evalval=`echo "${__SUPPORTSERVERS}"|grep "\.${i}\."`
+ evalstring="__SUPPORT${i}=${evalval}"
+ eval "export ${evalstring}"
+done
+
+__SOFTWARE="osImage/${__OSNAME}/software/stable/${__ARCH}/${__RELEASE}"
+__PKGS="osImage/${__OSNAME}/PKGS/stable/${__ARCH}/${__RELEASE}"
+
+export __SOFTWARE __SUPPORTSERVERS __SITES __SHORTSUPPORT __SUPPORT __DNSDOMAIN __SITE __SITEMATRIX __cmEnable __CI __CUSTOMERBLOB __CLASSIFICATION __LDAPDN __LDAPADD __LDAPMODIFY __LDAPSEARCH __GREP __OSNAME __HOSTNAME __HOSTSHORT __ARCH __RELEASE __PKGS __SUDO_USER_MAIL __SUDO_USER __DATESTRING __TIMEINSECS __MYCLASSBEES __NMSITEHOSTS __NMSITEHOSTMATRIX

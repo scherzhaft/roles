@@ -1,0 +1,20 @@
+#!/bin/bash
+
+test "X$*" = "X" && exit 3
+SERVERS="$@"
+
+ROLEDEF=`cat /odirtools/scripts/role.defaults` || exit 5
+ALLOSROLES=`echo "${ROLEDEF}"|sed -n '/<allOS>/,/<\/allOS>/p'|grep -v "^<"`
+SunOSROLES=`echo "${ROLEDEF}"|sed -n '/<SunOS>/,/<\/SunOS>/p'|grep -v "^<"`
+LinuxROLES=`echo "${ROLEDEF}"|sed -n '/<Linux>/,/<\/Linux>/p'|grep -v "^<"`
+
+test "X${ALLOSROLES}${SunOSROLES}${LinuxROLES}" = "X" && exit 8
+
+for server in ${SERVERS} ; do
+  serverUname=`head -1 /sysbuild/system/${server}/uname.out` || exit 13
+  serverOS=`echo "${serverUname}"|awk {'print $1'}`
+  test "X${serverOS}" = "X" && exit 15
+  myRoles=`eval echo ${ALLOSROLES}\ \\$${serverOS}ROLES|perl -p -e "s/ +/\n/g"|sort -u|perl -p -e "s/^/${server}:/g"`
+  test "X${myRoles}" != "X" && echo "${myRoles}"
+##  /bin/bash -i
+done
