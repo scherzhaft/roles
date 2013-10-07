@@ -29,9 +29,9 @@ exit 0
 GITOUT=`echo "${GITOUT}"|grep -v "^tree HEAD:"`
 for i in `echo "${GITOUT}"` ; do
   GITHREF=`echo "${SELF}?${GITFILE}/${i}"|perl -p -e "s|//|/|g"`
-  test "X${GITTABLE}" = "X" && GITTABLE=`echo "\"<tr><td valign="top"><img src="/icons/back.gif" alt="[   ]"></td><td><a href="${SELF}?${GITDIR}">..</a></td></tr>\""`
+  test "X${GITTABLE}" = "X" && GITTABLE=`echo "<tr><td valign="top"><img src="/icons/back.gif" alt="[   ]"></td><td><a href="${SELF}?${GITDIR}">..</a></td></tr>"`
   GITTABLE=`echo "${GITTABLE}
-\"<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="${GITHREF}">${i}</a></td></tr>\""`
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="${GITHREF}">${i}</a></td></tr>"`
 done
 
 echo "Content-type: text/html"
