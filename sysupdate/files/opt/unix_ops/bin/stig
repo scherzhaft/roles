@@ -1,0 +1,97 @@
+#!/bin/bash
+
+
+set +x
+test "X${__DATESTRING}${__HOSTNAME}${__SUDO_USER_MAIL}${__SUDO_USER}${__OSNAME}${__ARCH}" = "X" && . /etc/default/SYSconstants
+set -x
+SELF=`/bin/basename $0`
+CWD=`pwd`
+___DATESTRING="$__DATESTRING"
+HOSTNAME="$__HOSTNAME"
+SUDO_USER_MAIL="$__SUDO_USER_MAIL"
+___SUDO_USER="$__SUDO_USER"
+OSNAME="$__OSNAME"
+ARCH="$__ARCH"
+PATCHBASE='/opt/unix_ops/'
+PATCHBIN="${PATCHBASE}/bin"
+MYRPTDIR="${PATCHBASE}/log"
+SCRATCHDIR="/tmp/${SELF}_$$"
+mkdir -p "${MYRPTDIR}"
+mkdir -p "${SCRATCHDIR}"
+####read test
+
+## run stig scripts
+echo '...running stig scripts'
+
+for i in `cat "${PATCHBASE}/etc/${OSNAME}.STIG.order"` ; do
+  "${PATCHBASE}/STIG/bin/${i}" > "${MYRPTDIR}/STIG${i}.out" 2>&1
+done
+
+
+##create filled out checklist
+echo '...filling out checklist'
+
+rtable=`netstat -rn`
+defaultrouter=`echo "${rtable}"|egrep "^0.0.0.0|^default"|awk {'print $2'}`
+test "X${OSNAME}" = "XLinux" && {
+  priif=`echo "${rtable}"|egrep "^0.0.0.0|^default"|awk {'print $NF'}`
+  test "X${priif}" !=  "X" && priip=`/sbin/ifconfig ${priif}|grep "inet addr:"|awk -F\: {'print $2'}|awk {'print $1'}`
+  test "X${priif}" !=  "X" && primac=`/sbin/ifconfig ${priif}|grep "^${priif} "|awk {'print $NF'}|tr "[:lower:]" "[:upper:]"`
+}
+
+test "X${OSNAME}" = "XSunOS" && {
+  defaultdest=`echo "${defaultrouter}"|awk -F\. {'print $1"\."$2"\."$3"\."'}`
+  test "X${defaultdest}" != "X" && {
+    priip=`echo "${rtable}"|/bin/grep "^${defaultdest}"|awk {'print $2'}`
+    priif=`echo "${rtable}"|/bin/grep "^${defaultdest}"|awk {'print $NF'}`
+    test "X${priip}" != "X" && primac=`/usr/sbin/arp -an|grep " ${priip} "|awk {'print $NF'}|tr "[:lower:]" "[:upper:]"`
+  }
+}
+
+echo "${priif}"
+echo "${priip}"
+echo "${primac}"
+
+FQORDER=`cat "${PATCHBASE}/etc/${OSNAME}.STIG.order"|perl -p -e "s|^|${PATCHBASE}/STIG/bin/|g"`
+echo "${FQORDER}" > "${SCRATCHDIR}/FQORDER"
+
+cp "${PATCHBASE}/etc/${OSNAME}.cklist.unwrapped.ckl" "${SCRATCHDIR}/${HOSTNAME}.ckl"
+cat ${FQORDER} |perl -p -e "s| |\n|g"|egrep 'GEN|RHEL'|perl -p -e "s|#||g"|sort -u|grep -v "/"|grep -v '\.tar'|sort -u > "${SCRATCHDIR}/gens"
+
+
+for i in `cat "${SCRATCHDIR}/gens" ` ; do
+  perl -p -i -e "s|(>Rule_Ver</VULN_ATTRIBUTE>@@@@.*?<ATTRIBUTE_DATA>${i}</ATTRIBUTE_DATA>@@@@.*?)<STATUS>[^\<]*</STATUS>@@@@|\1<STATUS>NotAFinding</STATUS>@@@@|g" "${SCRATCHDIR}/${HOSTNAME}.ckl"
+done
+
+
+## super ugly make a .csv out of the unwrapped .xml
+
+cat "${SCRATCHDIR}/${HOSTNAME}.ckl" |perl -p -e "s|</VULN>|</VULN>\n|g"|perl -p -e "s|^.*?<STIG_DATA>|<STIG_DATA>|g"|grep "^<STIG_DATA>@@@@"|perl -p -e "s|>TargetKey</VULN_ATTRIBUTE>@@@@([\s]*)<ATTRIBUTE_DATA>([0-9]+)</ATTRIBUTE_DATA>@@@@([\s]*)</STIG_DATA>@@@@([\s]*)<STATUS>|>TargetKey</VULN_ATTRIBUTE>@@@@\1<ATTRIBUTE_DATA>\2</ATTRIBUTE_DATA>@@@@\3</STIG_DATA>@@@@        <STIG_DATA>@@@@            <VULN_ATTRIBUTE>CCI_REF</VULN_ATTRIBUTE>@@@@            <ATTRIBUTE_DATA>null</ATTRIBUTE_DATA>@@@@        </STIG_DATA>@@@@\4<STATUS>|g"|perl -p -e "s|<VULN_ATTRIBUTE>(CCI_REF</VULN_ATTRIBUTE>@@@@.*<ATTRIBUTE_DATA>.*?<STATUS>)|######\1######|g"|perl -p -e "s|######.*?<ATTRIBUTE_DATA>|%%%%|g"|perl -p -e "s|</ATTRIBUTE_DATA>@@@@[\s]+</STIG_DATA>@@@@[\s]+<STATUS>######|%%%%<STATUS>|g"|perl -p -e "s|%%%%(CCI-[0-9]{6})</ATTRIBUTE_DATA>.*?(CCI-[0-9]{6})%%%%|%%%%\1 \2######|g"|perl -p -e "s|%%%%|<VULN_ATTRIBUTE>CCI_REF</VULN_ATTRIBUTE>@@@@            <ATTRIBUTE_DATA>|g"|perl -p -e "s|######<STATUS>|</ATTRIBUTE_DATA>@@@@        </STIG_DATA>@@@@        <STIG_DATA>@@@@            <STATUS>|g"|perl -p -e "s|<[A_Z,_,\/]+>@@@@||g"|perl -p -e "s|<ATTRIBUTE_DATA>|\"|g"|perl -p -e "s|</ATTRIBUTE_DATA>@@@@|\"\,|g"|perl -p -e "s|<STATUS>|\"\,\"|g"|perl -p -e "s|</STATUS>@@@@|\"\,\"|g"|perl -p -e "s|[\s]*?<FINDING_DETAILS>||g"|perl -p -e "s|</FINDING_DETAILS>@@@@|\"\,\"|g"|perl -p -e "s|[\s]*?<COMMENTS>||g"|perl -p -e "s|</COMMENTS>@@@@|\"\,\"|g"|perl -p -e "s|[\s]*?<SEVERITY_OVERRIDE>||g"|perl -p -e "s|</SEVERITY_OVERRIDE>@@@@|\"\,\"|g"|perl -p -e "s|[\s]*?<SEVERITY_JUSTIFICATION>||g"|perl -p -e "s|</SEVERITY_JUSTIFICATION>@@@@|\"|g"|perl -p -e "s|[\s]*?</VULN>$||g"|perl -p -e "s|^[^\"]+||g"|perl -p -e "s|[\s]+</STIG_DATA>@@@@.*?</VULN_ATTRIBUTE>@@@@[^\"]+||g"|perl -p -e "s|[\s]*?</STIG_DATA>@@@@[^\"]*||g"|perl -p -e "s|\,\"\,|\,|g"|perl -p -e "s|@@@@||g"|perl -p -e "s|</ATTRIBUTE_DATA>||g"|perl -p -e "s|<VULN_ATTRIBUTE>CCI_REF</VULN_ATTRIBUTE>[^\"]*\"||g" > "${SCRATCHDIR}/${HOSTNAME}.csv"
+
+
+
+
+perl -p -i -e "s|@@@@|\n|g" "${SCRATCHDIR}/${HOSTNAME}.ckl"
+
+test "X${primac}" != "X" && perl -p -i -e "s|%MYMAC%|${primac}|g"  "${SCRATCHDIR}/${HOSTNAME}.ckl"
+
+test "X${priip}" != "X" && perl -p -i -e "s|%MYIP%|${priip}|g"  "${SCRATCHDIR}/${HOSTNAME}.ckl"
+
+test "X${HOSTNAME}" != "X" && perl -p -i -e "s|%MYHOSTNAME%|${HOSTNAME}|g" "${SCRATCHDIR}/${HOSTNAME}.ckl"
+
+cp "${SCRATCHDIR}/${HOSTNAME}.ckl" "${SCRATCHDIR}/${HOSTNAME}.csv" "${MYRPTDIR}/"
+
+rm -rf "${SCRATCHDIR}"
+
+chmod 0600 "${MYRPTDIR}/${HOSTNAME}.ckl"
+chmod 0600 "${MYRPTDIR}/${HOSTNAME}.csv"
+
+
+## upload results
+echo '...upload results'
+
+/usr/sbin/slack-get sysupdate.report
+
+echo 'Complete'
+
+

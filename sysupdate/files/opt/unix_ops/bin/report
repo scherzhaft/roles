@@ -1,0 +1,39 @@
+#!/bin/bash -x
+
+
+DATESTRING=`date +%m_%d_%Y_%H_%M_%S`
+HOSTNAME=`/bin/hostname|awk -F. {'print $1'}`
+CWD=`pwd`
+PATCHBASE=`dirname $0`
+FQPATCHBASE=`echo "${PATCHBASE}"|perl -p -e "s|^([^/]*)|${CWD}/\1|"`
+SYSUPDATE="/opt/unix_ops"
+CURRRUN="/opt/${DATESTRING}"
+SPOOL="${SYSUPDATE}/spool"
+REPORT_D="${SYSUPDATE}/report.d"
+REPORT="${SYSUPDATE}/report"
+REPORTZIP="${REPORT}/sysupdate.report.zip"
+REPORTARCHIVEZIP="${REPORT}/sysupdate.report.archive.zip"
+LDIFDIR="${SYSUPDATE}/ldif" 
+PCACLIENT="/opt/unix_ops/bin"
+PCAETC="/opt/unix_ops/etc"
+MYRPTDIR="${PCACLIENT}/../log"
+
+if [ -f "${REPORTARCHIVEZIP}" ] ; then
+  REPORTARCHIVESIZE=`ls -al "${REPORTARCHIVEZIP}"|awk {'print $5'}`
+fi
+
+if [ "X${REPORTARCHIVESIZE}" = "X" ] ; then
+  REPORTARCHIVESIZE='0'
+fi
+
+if [ "${REPORTARCHIVESIZE}" -gt '4000000' ] ; then
+  rm "${REPORTARCHIVEZIP}"
+fi
+
+rm -rf "${SPOOL}"
+mkdir -p "${SPOOL}"
+for i in ${REPORT_D}/* ; do
+  echo "#### running ${i} ####"
+  . ${i}
+done
+ 

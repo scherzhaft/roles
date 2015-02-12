@@ -1,0 +1,5 @@
+#!/bin/bash
+
+
+/bin/uname -a >${SPOOL}/uname.out
+/usr/sbin/dmidecode -t 1 >>${SPOOL}/uname.out

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+SCAPS=`ls -d /opt/unix_ops/system/* 2>/dev/null`
+
+
+if [ "X${SCAPS}" != "X" ] ; then
+  cp ${SCAPS} "${SPOOL}"
+fi
+

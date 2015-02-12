@@ -1,0 +1,41 @@
+[SYS-CentOS-$releasever-base]
+name=SYS-CentOS-$releasever - Base
+baseurl=http://foo/osImage/centos/$releasever/os/$basearch/
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SYS-CentOS-6
+enabled=1
+
+[SYS-CentOS-$releasever-updates]
+name=SYS-CentOS-$releasever - Updates
+baseurl=http://foo/osImage/centos/$releasever/updates/$basearch/
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SYS-CentOS-6
+enabled=1
+
+[SYS-CentOS-$releasever-extras]
+name=SYS-CentOS-$releasever - Extras
+baseurl=http://foo/osImage/centos/$releasever/extras/$basearch/
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SYS-CentOS-6
+enabled=1
+
+[SYS-CentOS-$releasever-contrib]
+name=SYS-CentOS-$releasever - Contrib
+baseurl=http://foo/osImage/centos/$releasever/contrib/$basearch/
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SYS-CentOS-6
+enabled=1
+
+####[SYS-CentOS-$releasever-centosplus]
+####name=SYS-CentOS-$releasever - CentOSPlus
+####baseurl=http://foo/osImage/centos/$releasever/centosplus/$basearch/
+####gpgcheck=0
+####gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SYS-CentOS-6
+####enabled=1
+
+[SYS-CentOS-$releasever-cr]
+name=SYS-CentOS-$releasever - CentOScr
+baseurl=http://foo/osImage/centos/$releasever/cr/$basearch/
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-SYS-CentOS-6
+enabled=0

@@ -1,0 +1,29 @@
+#!/bin/bash
+
+ZONEADM='/usr/sbin/zoneadm'
+ZONENAME='/usr/bin/zonename'
+
+if [ -f "${ZONEADM}" -a -f "${ZONENAME}" ] ; then
+  MYZONENAME=`eval ${ZONENAME}`
+  ZONEADMLS=`"${ZONEADM}" list -civ`
+  if [ "X${ZONEADMLS}" != "X" -a "X${MYZONENAME}" = "Xglobal" ] ; then
+    ZONECOUNT=`echo "${ZONEADMLS}"|wc -l|awk {'print $1'}`
+    VMCOUNT=`expr "${ZONECOUNT}" - 1`
+    if [ X$? = X0 ] ; then
+      if [ "${VMCOUNT}" -gt 0 ] ; then
+        VMLIST=`echo "${ZONEADMLS}"|tail -"${VMCOUNT}"|grep -v "^.* global .*"`
+        if [ "X${VMLIST}" != "X" ] ; then
+          echo "${ZONEADMLS}"|while read line ; do
+            if [[ "${line}" == *ID*NAME* ]] ; then
+              FQDN='FQDN'
+            else
+              ZONEPATH=`echo "${line}"|awk {'print $4'}`
+              FQDN=`cat ${ZONEPATH}/etc/nodename  ${ZONEPATH}/root/etc/nodename 2>/dev/null|sort -u|head -1`
+            fi
+            echo "${line}"|perl -p -e "s|^([\s]*[^\s]+[\s]+)|\1 ${FQDN} |g"
+          done  >${SPOOL}/zone.vm.list
+        fi
+      fi
+    fi
+  fi
+fi

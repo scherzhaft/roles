@@ -1,0 +1,8 @@
+#!/bin/bash
+
+
+SAFE=`/usr/bin/pgrep prtdiag`
+if [ "X${SAFE}" = "X" ] ; then
+  /usr/platform/`uname -i`/sbin/prtdiag -v|sed -e "/Status/,/==/d" >${SPOOL}/prtdiag.out
+fi
+

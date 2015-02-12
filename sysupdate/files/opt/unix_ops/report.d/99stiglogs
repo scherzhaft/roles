@@ -1,0 +1,4 @@
+#!/bin/bash
+
+STIGLOGS=`/bin/ls -d ${MYRPTDIR}/STIG*.out`
+test "X${STIGLOGS}" != "X" && cp ${STIGLOGS} ${SPOOL}

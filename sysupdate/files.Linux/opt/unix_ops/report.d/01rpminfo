@@ -1,0 +1,8 @@
+#!/bin/bash
+
+####/bin/rpm -qa >${SPOOL}/rpminfo.out
+WHEREAMI=`dirname $0`
+rm -f ${WHEREAMI}/00rpminfo
+/usr/bin/yum list installed|sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|perl -p -e "s|\n|####|g"|perl -p -e "s|####\s+| |g"|perl -p -e "s|####|\n|g" > ${SPOOL}/rpminfo.out
+
+

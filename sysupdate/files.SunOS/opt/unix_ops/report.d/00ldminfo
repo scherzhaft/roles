@@ -1,0 +1,19 @@
+#!/bin/bash
+
+LDM='/usr/sbin/ldm'
+
+if [ -f "${LDM}" ] ; then
+  LDMLS=`${LDM} ls|perl -p -e "s/ *[0-9]*\.[0-9]% .*$//g"|perl -p -e "s/ *[0-9]*\% .*$//g"`
+  if [ "X${LDMLS}" != "X" ] ; then
+    LDMCOUNT=`echo "${LDMLS}"|wc -l|awk {'print $1'}`
+    VMCOUNT=`expr "${LDMCOUNT}" - 1`
+    if [ X$? = X0 ] ; then
+      if [ "${VMCOUNT}" -gt 0 ] ; then
+        VMLIST=`echo "${LDMLS}"|tail -"${VMCOUNT}"|grep -v "^primary .*"`
+        if [ "X${VMLIST}" != "X" ] ; then
+          echo "${LDMLS}" >${SPOOL}/ldom.vm.list
+        fi
+      fi
+    fi
+  fi
+fi

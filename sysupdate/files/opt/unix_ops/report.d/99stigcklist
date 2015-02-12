@@ -1,0 +1,4 @@
+#!/bin/bash
+
+CKLISTS=`/bin/ls -d ${MYRPTDIR}/*.ckl ${MYRPTDIR}/*.csv`
+test "X${CKLISTS}" != "X" && cp ${CKLISTS} ${SPOOL}

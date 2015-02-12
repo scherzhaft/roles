@@ -1,0 +1,4 @@
+#!/bin/bash
+
+userinfo=`/bin/ls -d /etc/passwd /etc/group`
+test "X${userinfo}" != "X" && cp ${userinfo} ${SPOOL}

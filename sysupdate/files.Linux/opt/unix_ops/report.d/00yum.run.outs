@@ -1,0 +1,4 @@
+#!/bin/bash
+
+YUMOUTS=`/bin/ls -d ${MYRPTDIR}/yum.out.*|grep -v "2011"`
+test "X${YUMOUTS}" != "X" && cp ${YUMOUTS} ${SPOOL}

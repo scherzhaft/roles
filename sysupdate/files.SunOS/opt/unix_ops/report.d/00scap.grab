@@ -1,0 +1,11 @@
+#!/bin/bash
+
+SCAPS=`find  /opt/scc/Results/OVAL/* \! -type d 2>/dev/null`
+SCAPS=''
+unset SCAPS
+
+
+if [ "X${SCAPS}" != "X" ] ; then
+  cp ${SCAPS} "${SPOOL}"
+fi
+

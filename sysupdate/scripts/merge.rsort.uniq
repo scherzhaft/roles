@@ -1,0 +1,14 @@
+#!/bin/bash
+
+
+##set -x
+mytemp="/tmp/`basename $0`$$"
+dest=`echo "${*}"|cut -f1 -d' '`
+src=`echo "${*}"|cut -f2- -d' '`
+if [ "X${dest}" != "X" -a "X${src}" != "X" ] ; then
+  /bin/rm -f "${mytemp}"
+  cat ${dest} ${src} 2>/dev/null|sort -u > "${mytemp}"
+  cat "${mytemp}" > "${dest}"
+  /bin/rm -f "${mytemp}"
+fi
+

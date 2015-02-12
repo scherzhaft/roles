@@ -1,0 +1,22 @@
+#!/bin/sh
+
+
+enableOPSLinuxrepo
+sleep 1
+UPDATELIST=`/usr/bin/yum check-update|grep -v -E '(\[|\])'|grep -- '-'`
+sleep 1
+disableOPSLinuxrepo
+sleep 1
+
+if [ "X${UPDATELIST}" != "X" ] ; then
+ UPDATEQTY=`echo "${UPDATELIST}"|wc -l|awk {'print $1'}`
+else
+ UPDATEQTY='0'
+fi
+
+OELSYNCDATE=`cat /opt/unix_ops/etc/SyncDate 2>/dev/null`
+if [ "X${OELSYNCDATE}" = "X" ] ; then
+ OELSYNCDATE='foo'
+fi
+
+printf "Using repodata from ${OELSYNCDATE}\nHost: ${__HOSTNAME} (${__OSNAME}/`uname -r`/${__ARCH})\nList: check-update (${UPDATEQTY}/9999)\n\n${UPDATELIST}" >${SPOOL}/yum.patch.report

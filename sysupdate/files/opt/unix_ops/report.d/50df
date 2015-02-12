@@ -1,0 +1,21 @@
+#!/bin/bash
+
+
+doit()
+{
+foo=`/bin/df -h|sed "/^ /s/^/@/g"|perl -p -e "s/\n/#/g"|perl -p -e "s/#@ */ /g"|perl -p -e "s/#/\n/g"|grep  -v "/var/run/.patchSafeMode"|grep -v "/dev/lofi/"|grep -v "/var/run/.patch_root_loopbackmnt"|awk {'print $1" "$NF'}`
+
+
+foowc=`echo "${foo}"|wc -l|awk {'print $1'}`
+foodatalc=`expr ${foowc} - 1`
+header=`echo "${foo}"|head -1`
+foodata=`echo "${foo}"|tail -${foodatalc}|sort -u`
+
+
+
+/usr/bin/printf "${header}\n${foodata}\n" >${SPOOL}/df.out
+
+}
+
+
+__slapwhoami X${__HOSTNAME} |grep -v "=backup$" && doit

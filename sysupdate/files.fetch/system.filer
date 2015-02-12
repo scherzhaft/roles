@@ -1,0 +1,33 @@
+#!/bin/bash -x
+
+
+. /etc/default/SYSconstants
+INCOMING='/unix_ops/system.INCOMING'
+SYSDIR='/unix_ops/system'
+EPOC=`__getepoc`
+DNSDOMAIN="${__DNSDOMAIN}"
+
+test "X${EPOC}" = "X" && exit 1
+test "X${DNSDOMAIN}" = "X" && exit exit 5
+test -d "${INCOMING}" || exit 0
+touch "${INCOMING}" || exit 2
+lsof "${INCOMING}" || {
+  mv "${INCOMING}" "${INCOMING}.${EPOC}" || exit 3
+  UPLOADS=`find ${INCOMING}.${EPOC}/*/opt/unix_ops/report/sysupdate.report.zip`
+  for uload in `echo "${UPLOADS}"` ; do
+    hname=`unzip -p "${uload}" uname.out|head -1|awk {'print $2'}`
+    test "X${hname}" = "X" && continue
+    echo "${hname}"|grep "${DNSDOMAIN}" || hname="${hname}.${DNSDOMAIN}"
+    hnamefqdn="${hname}"
+    mkdir -p "${SYSDIR}/${hnamefqdn}" || exit 4
+    chmod -R 775 "${SYSDIR}/${hnamefqdn}"
+    unzip -o "${uload}" -d "${SYSDIR}/${hnamefqdn}"
+    chmod -R 775 "${SYSDIR}/${hnamefqdn}"
+ ##read test
+    done
+
+  rm -rf "${INCOMING}.${EPOC}"
+
+  }
+
+

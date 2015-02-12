@@ -1,0 +1,19 @@
+#!/bin/bash
+
+XM='/usr/sbin/xm'
+
+if [ -f "${XM}" ] ; then
+  XMLS=`${XM} list|perl -p -e "s/ ...... *[0-9]*\.[0-9]$//g"`
+  if [ "X${XMLS}" != "X" ] ; then
+    XMCOUNT=`echo "${XMLS}"|wc -l|awk {'print $1'}`
+    VMCOUNT=`expr "${XMCOUNT}" - 1`
+    if [ X$? = X0 ] ; then
+      if [ "${VMCOUNT}" -gt 0 ] ; then
+        VMLIST=`echo "${XMLS}"|tail -"${VMCOUNT}"|grep -v "^Domain-0 .*"`
+        if [ "X${VMLIST}" != "X" ] ; then
+          echo "${XMLS}" >${SPOOL}/xen.vm.list
+        fi
+      fi
+    fi
+  fi
+fi

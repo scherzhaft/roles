@@ -1,0 +1,7 @@
+#SYScontrib - Linux rpms by and for SYS
+[SYS_contrib]
+name=SYS Linux rpms
+baseurl=http://foo/SYScontrib/Linux
+gpgcheck=0
+enabled=1
+

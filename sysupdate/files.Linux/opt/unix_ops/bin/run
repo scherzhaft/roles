@@ -1,0 +1,123 @@
+#!/bin/bash
+
+##set -x
+___DATESTRING="$__DATESTRING"
+HOSTNAME="$__HOSTNAME"
+SUDO_USER_MAIL="$__SUDO_USER_MAIL"
+___SUDO_USER="$__SUDO_USER"
+OSNAME="$__OSNAME"
+ARCH="$__ARCH"
+PATCHBASE='/opt/unix_ops/'
+MYRPTDIR="${PATCHBASE}/log"
+mkdir -p "${MYRPTDIR}"
+##read test
+. /etc/default/SYSconstants
+
+sleep 1
+enableALLrepos
+/usr/bin/yum clean all
+
+disableALLrepos
+enableSysupdaterepos
+enableOPSLinuxrepo
+
+UPDATELIST=`/usr/bin/yum check-update|grep -v -E '(\[|\])'|grep -- '-'`
+
+if [ "X${UPDATELIST}" != "X" ] ; then
+  UPDATEQTY=`echo "${UPDATELIST}"|wc -l|awk {'print $1'}`
+else
+  UPDATEQTY='0'
+fi
+
+OELSYNCDATE=`cat /opt/unix_ops/etc/SyncDate 2>/dev/null`
+if [ "X${OELSYNCDATE}" = "X" ] ; then
+  OELSYNCDATE='foo'
+fi
+
+printf "Using repodata from ${OELSYNCDATE}\nHost: ${HOSTNAME} (${OSNAME}/`uname -r`/${ARCH})\nList: check-update (${UPDATEQTY}/9999)\n\n" >"${MYRPTDIR}/yum.out.${___DATESTRING}"
+
+####currsysupdate_repo=`cat /etc/yum.repos.d/sysupdate.repo`
+####sleep 2
+####/usr/sbin/slack-get sudoers-update.install.missing
+####sleep 2
+####test "X${currsysupdate_repo}" != "X" && echo "${currsysupdate_repo}" > /etc/yum.repos.d/sysupdate.repo
+sleep 2
+
+
+updatejdk()
+{
+##safely update java, stay within major rev
+
+jdk6pkgs=`yum list installed jdk-1.6.* jdk-demo-sample-1.6.* 2>/dev/null|sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|awk {'print $1'}|sort -u`
+test "X${jdk6pkgs}" != "X" && {
+  jdk6updateglob=`echo "${jdk6pkgs}"|perl -p -e "s|^(.*?)\.([^\.]+$)|\1-1.6.*.\2|g"`
+  /usr/bin/yum  --skip-broken --exclude=SYS* -y update-to ${jdk6updateglob}
+}
+
+jdk7pkgs=`yum list installed jdk-1.7.* jdk-demo-sample-1.7.* 2>/dev/null|sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|awk {'print $1'}|sort -u`
+test "X${jdk7pkgs}" != "X" && {
+  jdk7updateglob=`echo "${jdk7pkgs}"|perl -p -e "s|^(.*?)\.([^\.]+$)|\1-1.7.*.\2|g"`
+  /usr/bin/yum  --skip-broken --exclude=SYS* -y update-to ${jdk7updateglob}
+}
+
+jdk8pkgs=`yum list installed jdk-1.8.* jdk-demo-sample-1.8.* 2>/dev/null|sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|awk {'print $1'}|sort -u`
+test "X${jdk8pkgs}" != "X" && {
+  jdk8updateglob=`echo "${jdk8pkgs}"|perl -p -e "s|^(.*?)\.([^\.]+$)|\1-1.8.*.\2|g"`
+  /usr/bin/yum  --skip-broken --exclude=SYS* -y update-to ${jdk8updateglob}
+}
+
+}
+
+
+updatemysql()
+{
+## odbc-connector seems to be safely updatible with no special treatment.
+/usr/bin/yum  --skip-broken --exclude=SYS* -y update mysql-connector-odbc   >>"${MYRPTDIR}/yum.out.${___DATESTRING}" 2>&1
+
+##set -x
+## we prefer to use the community edition off the mysql mirror, so were gonna back your config and make the switch if needed.
+notcommunedition=`yum list installed mysql*-5.0.* mysql*-5.1.* mysql*-5.5.* MySQL*-5.0.* MySQL*-5.1.* MySQL*-5.5.* 2>/dev/null|grep -vi advanced|grep -vi Enterprise |sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|awk {'print $1'}|tr '[:upper:]' '[:lower:]'|sort -u|grep -v -i -- "-connector-odbc"|grep -v -i -- "-community-"|perl -p -e "s|^mysql\.|mysql-client\.|g"|perl -p -e "s|^mysql-|mysql-community-|g"`
+test "X${notcommunedition}" != "X" && {
+  communeditionupdateglob=`echo "${notcommunedition}"|perl -p -e "s|^(.*?)\.([^\.]+$)|\1-5.5.*.\2|g"`
+  cp -p /etc/my.cnf /etc/my.cnf.`__getepoc`
+  sleep 2
+  mv /etc/my.cnf.rpmsave /etc/my.cnf.rpmsave.`__getepoc`
+  sleep 2
+  /usr/bin/yum  --skip-broken --exclude=SYS* -y install ${communeditionupdateglob} mysql-community-libs-compat-5.5.* mysql-community-devel-5.5.*  >>"${MYRPTDIR}/yum.out.${___DATESTRING}" 2>&1
+  sleep 2
+  test -f /etc/my.cnf.rpmsave && {
+    cp -p /etc/my.cnf /etc/my.cnf.rpmnew
+    cp -p /etc/my.cnf.rpmsave /etc/my.cnf
+    }
+  }
+
+
+## we want to only update within the same major rev (5.5, 5.6)
+mysql55=`yum list installed mysql-community-*-5.5.* 2>/dev/null|sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|awk {'print $1'}|sort -u`
+test "X${mysql55}" != "X" && {
+  mysql55updateglob=`echo "${mysql55}"|perl -p -e "s|^(.*?)\.([^\.]+$)|\1-5.5.*.\2|g"`
+  /usr/bin/yum  --skip-broken --exclude=SYS* -y update-to ${mysql55updateglob}
+  }
+
+mysql56=`yum list installed mysql-community-*-5.6.* 2>/dev/null|sed -n '/^Installed Packages/,$p'|grep -v "^Installed Packages"|awk {'print $1'}|sort -u`
+test "X${mysql56}" != "X" && {
+  mysql56updateglob=`echo "${mysql56}"|perl -p -e "s|^(.*?)\.([^\.]+$)|\1-5.6.*.\2|g"`
+  /usr/bin/yum  --skip-broken --exclude=SYS* -y update-to ${mysql56updateglob}
+  }
+
+}
+
+
+updatejdk  >>"${MYRPTDIR}/yum.out.${___DATESTRING}" 2>&1
+updatemysql  >>"${MYRPTDIR}/yum.out.${___DATESTRING}" 2>&1
+
+##/usr/bin/yum  --skip-broken --exclude=SYS* -y update jdk jdk-demo-sample >>"${MYRPTDIR}/yum.out.${___DATESTRING}" 2>&1
+disableOPSLinuxrepo
+sleep 2
+/usr/bin/yum  --skip-broken --exclude=SYS* -y update >>"${MYRPTDIR}/yum.out.${___DATESTRING}" 2>&1
+
+echo 'Complete' >> "${MYRPTDIR}/yum.out.${___DATESTRING}"
+
+cat "${MYRPTDIR}/yum.out.${___DATESTRING}"|mailx -s "yum.run ${HOSTNAME}" ${SUDO_USER_MAIL} 2>&1 >/dev/null
+
+/usr/sbin/slack-get sysupdate.report%__SUDO_USER=${___SUDO_USER}

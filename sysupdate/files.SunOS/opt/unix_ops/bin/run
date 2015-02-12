@@ -1,0 +1,35 @@
+#!/bin/bash
+set -x
+test "X${__DATESTRING}${__HOSTNAME}${__SUDO_USER_MAIL}${__SUDO_USER}${__OSNAME}${__ARCH}" = "X" && . /etc/default/SYSconstants
+CWD=`pwd`
+___DATESTRING="$__DATESTRING"
+HOSTNAME="$__HOSTNAME"
+SUDO_USER_MAIL="$__SUDO_USER_MAIL"
+___SUDO_USER="$__SUDO_USER"
+OSNAME="$__OSNAME"
+ARCH="$__ARCH"
+PATCHBASE='/opt/unix_ops/'
+PATCHBIN="${PATCHBASE}/bin"
+MYRPTDIR="${PATCHBASE}/log"
+mkdir -p "${MYRPTDIR}"
+####read test
+
+####/usr/bin/nohup ${PATCHBIN}/pca -X ${PATCHBASE}/etc ${*} -y   -i  missingrs > "${MYRPTDIR}/pca.out.${___DATESTRING}" 2>&1 < /dev/null &
+
+/usr/sbin/svcadm -v disable -s svc:/system/cron:default
+sleep 1
+rm -f  /var/spool/clientmqueue/* /var/spool/mqueue/*
+
+${PATCHBIN}/pca -X ${PATCHBASE}/etc ${*} -y   -i  missingrs > "${MYRPTDIR}/pca.out.${___DATESTRING}" 2>&1
+
+sleep 1
+rm -f  /var/spool/clientmqueue/* /var/spool/mqueue/*
+sleep 1
+
+/usr/sbin/slack-get sendmail-solaris
+sleep 1
+/usr/sbin/svcadm -v enable -s svc:/system/cron:default
+
+cat "${MYRPTDIR}/pca.out.${___DATESTRING}"|mailx -s "pca.run ${HOSTNAME}" ${SUDO_USER_MAIL} 2>&1
+
+/usr/sbin/slack-get sysupdate.report%__SUDO_USER=${___SUDO_USER}

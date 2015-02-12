@@ -1,0 +1,12 @@
+#!/bin/bash
+
+
+OSNAME=`uname -s`
+
+if [ "${OSNAME}" = "SunOS" ] ; then
+ cp /opt/sfw/etc/sudoers ${SPOOL}
+else
+ cp /etc/sudoers ${SPOOL}
+fi
+
+
