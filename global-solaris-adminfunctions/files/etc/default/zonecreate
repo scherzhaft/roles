@@ -448,7 +448,7 @@ zonefqdnlist=`echo "${args}"|grep "^zonefqdnlist "|awk {'print $2'}|sed -e "s/\,
 foregroundFlag=`echo "${args}"|grep "^FG"`
 
 if [ -z "${args}" -o -z "${jconf}" -o -z "${zonefqdnlist}" ] ; then
- echo "usage:  ./zonecreate --zonefqdnlist fqdn-of-zone,fqdn-of-zone,fqdn-of-zone --jconf http://foo/cgi-bin/slack-slaper-proxy?jumpstart"
+ echo "usage:  ./zonecreate --zonefqdnlist fqdn-of-zone,fqdn-of-zone,fqdn-of-zone --jconf http://foo/cgi-bin/slack-get-proxy?jumpstart"
  exit 1
 fi
 

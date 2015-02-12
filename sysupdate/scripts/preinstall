@@ -18,14 +18,18 @@ PKGS=`cat ${SCRIPTDIR}/PKGS 2>/dev/null|perl -p -e "s/\n/,/g"`
 RESPONCE=`echo "${PKGS}"|head -1|sed -e "s|,||g"`
 ##exit 1
 
-/usr/sbin/slack-slaper global-slack
-/usr/sbin/slack-slaper global-solaris-adminfunctions
+/usr/sbin/slack-get global-slack
+/usr/sbin/slack-get global-solaris-adminfunctions
 
 . /etc/default/SYSconstants
+export PATH="${SCRIPTDIR}:${PATH}"
+
 mkdir -p "${ROLEDIR}/files" >/dev/null 2>&1
 slack --no-sync --no-scripts -r "${ROLEDIR}/files" "${ROLE}.${__OSNAME}"
-chmod 400 ${SCRIPTDIR}/%FETCHCRED%
-chown root:root ${SCRIPTDIR}/%FETCHCRED%
+
+
+####chmod 400 ${SCRIPTDIR}/%FETCHCRED%
+####chown root:root ${SCRIPTDIR}/%FETCHCRED%
 NAME="${ROLE}Tracker"
 DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${ROLE} role."
 if [ "X${__OSNAME}" = "XSunOS" ] ; then
@@ -56,20 +60,27 @@ case "${SUBROLEACTION}${ACTIONATTR}" in
     return 2
   ;;    
 
-  run|report)
+  run|report|stig)
+    mkusers
+    sudoers.patch
     sysupdate.prepare
+    rm -f /opt/unix_ops/STIG/bin/*
     return 0
   ;;
 
   *)
     ##set -x
-    echo
-    echo "########################"
-    echo "##  INVALID ARGUMENT  ##"
-    echo "########################"
-    echo
-    roleusage
-    return 7
+    eval "${SUBROLEACTION}${ACTIONATTR}"
+    if [ "X${?}" != "X" -a "X${?}" != "X0" ] ; then
+      echo
+      echo "########################"
+      echo "##  INVALID ARGUMENT  ##"
+      echo "########################"
+      echo
+      roleusage
+      return 7
+    fi
+    return 9
 esac
 }
 
@@ -91,21 +102,6 @@ echo "###########"
 
 }
 
-mkusers()
-{
-echo 
-echo mkuser
-${SCRIPTDIR}/mkusers
-echo
-}
-
-setperms()
-{
-echo
-echo setperms
-${SCRIPTDIR}/setperms
-echo
-}
 
 cleanexit()
 {
@@ -120,42 +116,9 @@ if [ "X${ROLEDIR}" != "X" ] ; then
 else
   exit $1
 fi
+return 0
 }
 
-
-sysupdate.prepare()
-{
-
-case "${__OSNAME}" in
- SunOS)
-  if [ -L /opt/SYSpca-client/SYScurrrev.xref ] ; then
-   rm -f /opt/SYSpca-client/SYScurrrev.xref
-  else
-   PATCHFILECKSUM=`cksum /opt/SYSpca-client/SYScurrrev.xref 2>&1`
-   STATUS=$?
-   if [ "${STATUS}" = "0" ] ; then
-    PATCHFILECKSUM=`echo "${PATCHFILECKSUM}"|awk {'print $1"."$2'}`
-    headerdate=`head -1 /opt/SYSpca-client/SYScurrrev.xref|grep "PATCHDIAG"|perl -p -e "s/\#//g"|awk {'print $NF'}|perl -p -e "s/\//\_/g"`
-    if [ "X${headerdate}" != "X" ] ; then
-     destfilename="patchdiag.xref.${headerdate}.${PATCHFILECKSUM}"
-    else
-     destfilename="patchdiag.xref.${PATCHFILECKSUM}"
-    fi
-    mv /opt/SYSpca-client/SYScurrrev.xref /opt/SYSpca-client/${destfilename}.xref
-   fi
-  fi
- ;;
-
- Linux)
-  reposdisable=`ls -d /etc/yum.repos.d/* 2>/dev/null|sort|grep -v "\/sysupdate.repo$"`
-  test "X${reposdisable}" != "X" && perl -p -i -e "s|^enabled=1$|enabled=0|g" ${reposdisable}
- ;;
- *)
-  echo "unknown OS"
-  exit 1
- 
-esac 
-}
 
 
 roleusage()
@@ -166,6 +129,7 @@ if [ "X${ROLE}" != "X" ] ; then
   echo "################################################################################"
   echo "################################################################################" 
   echo "##  usage: ${ROLE}.run                ## patch/update the system      "
+  echo "##  usage: ${ROLE}.stig               ## run all the stig/hardening scripts"
   echo "################################################################################"
   echo "################################################################################" 
   echo

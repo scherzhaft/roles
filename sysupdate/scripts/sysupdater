@@ -26,10 +26,10 @@ if [ "X${__SHORTSUPPORT}" != "X" ] ; then
 fi
 
 if [ "${__SITE}" = "ppa" ]; then
-  test -f opt/SYSpca-client/pca.conf && perl -pi -e "s/%SHORTSUPPORT%/${__SUPPORTdr1}/g" opt/SYSpca-client/pca.conf
+  test -f opt/unix_ops/pca.conf && perl -pi -e "s/%SHORTSUPPORT%/${__SUPPORTdr1}/g" opt/unix_ops/pca.conf
   test -f etc/yum.repos.d/sysupdate.repo && perl -pi -e "s|%SHORTSUPPORT%|${__SHORTSUPPORT}|g" etc/yum.repos.d/sysupdate.repo
 else
-  test -f opt/SYSpca-client/pca.conf && perl -pi -e "s/%SHORTSUPPORT%/${__SHORTSUPPORT}/g" opt/SYSpca-client/pca.conf
+  test -f opt/unix_ops/pca.conf && perl -pi -e "s/%SHORTSUPPORT%/${__SHORTSUPPORT}/g" opt/unix_ops/pca.conf
   test -f etc/yum.repos.d/sysupdate.repo && perl -pi -e "s|%SHORTSUPPORT%|${__SHORTSUPPORT}|g" etc/yum.repos.d/sysupdate.repo
 
 fi

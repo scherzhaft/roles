@@ -23,7 +23,7 @@ if [ "X${ARGS}" = "X" ] ; then
   rm -f descriptions.bak*
   mv descriptions descriptions.bak$$
  fi
- PKGLIST=`file *|grep -E "(:*package datastream|:*gzip)"|awk {'print $1$2$3$4$5$6$7$8$9'}`
+ PKGLIST=`file *|/usr/xpg4/bin/grep -E "(:*package datastream|:*gzip|:*pkg Datastream)"|awk {'print $1$2$3$4$5$6$7$8$9'}`
 else
  cat catalog|awk {'print $4'}|grep "^`basename ${ARGS}`$" >/dev/null
  PKGTEST="$?"
@@ -32,7 +32,7 @@ else
   rm -rf /tmp/$$
   exit 1
  fi
- PKGLIST=`file ${ARGS}|grep -E "(:*package datastream|:*gzip)"|awk {'print $1$2$3$4$5$6$7$8$9'}`
+ PKGLIST=`file ${ARGS}|/usr/xpg4/bin/grep -E "(:*package datastream|:*gzip|:*pkg Datastream)"|awk {'print $1$2$3$4$5$6$7$8$9'}`
 fi
 
 ##########
@@ -60,7 +60,7 @@ for i in `echo "${PKGLIST}"` ; do
 gzcat "${iPKG}"| pkgtrans -i /dev/stdin /tmp/$$/$subDir all
        PKGMETA=`gunzip -c "${iPKG}"|strings |${GSED} -n '/...............................................................................*install\/depend$/,/...............................................................................*000000/p`
   ;;
-  *package*datastream*)
+  *package*datastream*|*pkg*Datastream*)
 
 cat "${iPKG}" | pkgtrans -i /dev/stdin /tmp/$$/$subDir all
 

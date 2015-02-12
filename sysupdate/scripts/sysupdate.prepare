@@ -1,26 +1,24 @@
-#!/bin/bash
+#!/bin/bash -x
 
-/usr/sbin/slack-slaper global-slack
-/usr/sbin/slack-slaper global-solaris-adminfunctions
 
 . /etc/default/SYSconstants
 
 case "${__OSNAME}" in
  SunOS)
-  if [ -L /opt/SYSpca-client/SYScurrrev.xref ] ; then
-   rm -f /opt/SYSpca-client/SYScurrrev.xref
+  if [ -L /opt/unix_ops/etc/SYScurrrev.xref ] ; then
+   rm -f /opt/unix_ops/etc/SYScurrrev.xref
   else
-   PATCHFILECKSUM=`cksum /opt/SYSpca-client/SYScurrrev.xref 2>&1`
+   PATCHFILECKSUM=`cksum /opt/unix_ops/etc/SYScurrrev.xref 2>&1`
    STATUS=$?
    if [ "${STATUS}" = "0" ] ; then
     PATCHFILECKSUM=`echo "${PATCHFILECKSUM}"|awk {'print $1"."$2'}`
-    headerdate=`head -1 /opt/SYSpca-client/SYScurrrev.xref|grep "PATCHDIAG"|perl -p -e "s/\#//g"|awk {'print $NF'}|perl -p -e "s/\//\_/g"`
+    headerdate=`head -1 /opt/unix_ops/etc/SYScurrrev.xref|grep "PATCHDIAG"|perl -p -e "s/\#//g"|awk {'print $NF'}|perl -p -e "s/\//\_/g"`
     if [ "X${headerdate}" != "X" ] ; then
      destfilename="patchdiag.xref.${headerdate}.${PATCHFILECKSUM}"
     else
      destfilename="patchdiag.xref.${PATCHFILECKSUM}"
     fi
-    mv /opt/SYSpca-client/SYScurrrev.xref /opt/SYSpca-client/${destfilename}.xref
+    mv /opt/unix_ops/etc/SYScurrrev.xref /opt/unix_ops/etc/${destfilename}.xref
    fi
   fi
  ;;
@@ -33,3 +31,5 @@ case "${__OSNAME}" in
   exit 1
  
 esac  
+
+####read test

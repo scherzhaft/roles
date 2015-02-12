@@ -1,0 +1,9 @@
+#!/bin/bash
+
+
+chown system:system %SYSTEMHOME%/.ssh/authorized_keys
+chown system:system %SYSTEMHOME%/.ssh
+chown system:system %SYSTEMHOME%
+chmod 600 %SYSTEMHOME%/.ssh/authorized_keys
+chmod 750 %SYSTEMHOME%/.ssh
+chmod 755 %SYSTEMHOME%

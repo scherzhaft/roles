@@ -2,7 +2,7 @@
 
 PATH=$PATH:/sbin:/bin:/usr/sfw/bin:/usr/sfw/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/opt/sfw/bin:/opt/sfw/sbin:/opt/csw/bin:/opt/csw/sbin
 #__IPLIST=`ifconfig -a|perl -p -e "s/addr\://%FOO%0"|grep "inet "|awk {'print $2'}|perl -p -e "s/\n/ /g"`
-__MYIPLIST="`ifconfig -a|grep -v "inet6"|grep "inet"|perl -p -e "s/addr\://%FOO%0.0"`"
+__MYIPLIST="`ifconfig -a|grep -v "inet6"|grep "inet"|perl -p -e "s/addr\://g"|awk {'print $2'}`"
 __MYCLASSBEES="`echo "${__MYIPLIST}"|awk -F. {'print $1"."$2'}|sort|uniq`"
 __OSNAME=`uname -s`
 __ARCH=`uname -p`
@@ -15,6 +15,7 @@ if [ "${__OSNAME}" = "SunOS" ] ; then
  __LDAPADD="/usr/local/bin/ldapadd"
  __GAWK="/opt/sfw/bin/gawk"
  __FILE="/opt/sfw/bin/gfile"
+ __STAT="/opt/sfw/bin/stat"
 else
  __FILE="file"
  __HOSTNAME=`hostname`
@@ -23,10 +24,27 @@ else
  __LDAPSEARCH="/usr/bin/ldapsearch"
  __LDAPMODIFY="/usr/bin/ldapmodify"
  __LDAPADD="/usr/bin/ldapadd"
+ __STAT="stat"
 fi
+
+
+echo "${__HOSTNAME}"|grep "\..*\..*" >/dev/null || {
+  MYENTRY=`getent hosts "${__HOSTNAME}"|awk {'print $2" "$3" "$4" "$5" "$6" "$7" "$8" "$9'}`
+
+
+  for entryli in `echo "${MYENTRY}"` ; do
+    echo "${entryli}"|grep "\..*\..*" >/dev/null && {
+      __HOSTNAME="${entryli}"
+      break
+    }
+
+  done
+
+}
 
 test "X${__HOSTNAME}" != "X" && __HOSTNAMEIP=`getent hosts ${__HOSTNAME}|head -1|awk {'print $1'}`
 
+__HOSTNAME=`echo "${__HOSTNAME}"|perl -p -e "s|\.foo\.|\.|g"|perl -p -e "s|\.foo\.|\.|g"`
 __HOSTSHORT=`echo "${__HOSTNAME}"|awk -F. {'print $1'}`
 
 nmsitehosts()
@@ -103,16 +121,16 @@ if [ "${__STATUS}" -eq "0" ] ; then
  if [ "X${revclassstatus}" = "X0" ] ; then
   __CLASSIFICATION="s"
  else
-  __CLASSIFICATION=""
+  __CLASSIFICATION="n"
  fi
 else
- __HOSTNAMEDOMAIN="`echo $__HOSTNAME|awk -F. {'foo=NF-1;foo2=NF-2;foo3=NF-3;print $foo3"."$foo2"."$foo"."$NF'}|perl -p -e "s/.*\.FOO\./FOO\./g"`"
+ __HOSTNAMEDOMAIN="`echo $__HOSTNAME|awk -F. {'foo=NF-1;foo2=NF-2;foo3=NF-3;print $foo3"."$foo2"."$foo"."$NF'}|perl -p -e "s/.*\.foo1\./foo2\./g"`"
  echo "${__HOSTNAMEDOMAIN}"|grep "class" >/dev/null
  classstatus=$? 
  if [ "X${classstatus}" = "X0" ] ; then
   __CLASSIFICATION="s"
  else
-  __CLASSIFICATION=""
+  __CLASSIFICATION="n"
  fi
 fi
 
@@ -120,12 +138,19 @@ if [ "X${__CLASSIFICATION}" = "X" ] ; then
  if [ -f /etc/default/kodak.* ] ; then
   __CLASSIFICATION="s"
  else
-  __CLASSIFICATION=""
+  __CLASSIFICATION="n"
  fi
 fi
 
+__getepoc_day()
+{
+perl -e 'print int(time/(60*60*24))'
+}
+
 __getepoc()
 {
+perl -e 'print int(time)' 2>/dev/null && return 0
+
 if ls ${__GAWK} >/dev/null 2>&1 ; then
   echo |${__GAWK} '{print systime()}'
 fi
@@ -137,7 +162,7 @@ host="$1"
 test "X${host}" = "X" && host="${__HOSTNAME}"
 ##1ST WE ATTEMPT TO DETERMINE THE SERVERS DNSDOMAIN IN A TRADITIONAL FASHION##
 
-if echo "$__HOSTNAMEDOMAIN"|grep ".FOO." >/dev/null ; then
+if echo "$__HOSTNAMEDOMAIN"|grep "\..*\..*" >/dev/null ; then
  __DNSDOMAIN="$__HOSTNAMEDOMAIN"
 elif echo "$__REVERSEDDOMAIN"|grep ".FOO." >/dev/null ; then
 ##IF THE LOCALHOSTNAME ISNT SET YOU ARE PROBABLY BEING JUMPED, SO WE THEN TRY AND REVERSE THE DNSDOMAIN THRU A CGI ON THE JUMP SERVER BY DNS REVERSING THE JUMPSERVERS FQDN##
@@ -150,7 +175,7 @@ else
 fi
 
 if echo "${host}"|grep "%FOO%" >/dev/null ; then
- __SITE=ps1
+ __SITE=ps1prod
  if echo "${host}"|grep "%FOO%" >/dev/null ; then
   __SITE=ppi
  fi
@@ -165,8 +190,8 @@ else
  echo "Error in:"
  echo "/usr/bin/hostname"
  echo "${host} contains no known datacenter site identifier."
- echo "Defaulting to __SITE=ps1"
- __SITE=ps1
+ echo "Defaulting to __SITE=ps1prod"
+ __SITE=ps1prod
 
  for ipli in `echo "${__MYCLASSBEES}"` ; do
   sitetest=`echo "${__SITEMATRIX}"|grep "^${ipli}"`
@@ -177,8 +202,8 @@ else
    echo "Error in:"
    echo "__MYIPLIST"
    echo "$__MYIPLIST contains no known datacenter ip ranges."
-   echo "Defaulting to __SITE=ps1"
-   __SITE=ps1
+   echo "Defaulting to __SITE=ps1prod"
+   __SITE=ps1prod
   fi
  done
  return 0
@@ -200,6 +225,7 @@ fi
 _HOSTNAME="$1"
 echo "${_HOSTNAME}"|grep '^X' >/dev/null
 NOLDAPLOOKUP="$?"
+NOLDAPLOOKUP="0"
 if [ "X${NOLDAPLOOKUP}" != "X0" ] ; then
  __CUSTOMERBLOB="`__ldapsearchhandler -b ou=${_HOSTNAME},ou=hosts,${__LDAPDN} -LLL`"
  __STATUS="$?"
@@ -229,7 +255,7 @@ else
   fi
  done
 
- __cmEnable=`echo "${__CUSTOMERBLOB}"|grep "^cmEnable: "|perl -p -e "s/^cmEnable\: /cmEnable\=/g"|awk -F\= {'print $2'}`
+ __cmEnable=`echo "${__CUSTOMERBLOB}"|grep -i "^cmEnable: "|perl -p -e "s/^cm[E,e].nable\: /cmenable\=/g"|awk -F\= {'print $2'}`
  if [ -n "${__CI}" -a "X${__CI}" != "XUNKNOWN" ] ; then
   echo "__CI=${__CI}"
   if [ -n "${__cmEnable}" ] ; then
@@ -258,7 +284,7 @@ rm -rf /var/lib/slack/stage/roles/slapjob*
 /usr/sbin/slack-cleanup
 
 mkdir -p /var/cache/slack/roles/slapjob$$/scripts
-cp /usr/sbin/slack-slaper /var/cache/slack/roles/slapjob$$/slapjob
+cp /usr/sbin/slack-get /var/cache/slack/roles/slapjob$$/slapjob
 chmod 555 /var/cache/slack/roles/slapjob$$/slapjob
 
 cat >/var/cache/slack/roles/slapjob$$/scripts/postinstall <<__EOF__
@@ -276,16 +302,34 @@ slack --no-sync --sleep 3600 slapjob$$
 SLACKSTATUS=$?
 if [ "X${SLACKSTATUS}" != "X0" ] ; then
  if [ "X${__OSNAME}" = "XSunOS" ] ; then
-  /usr/sbin/slack-slaper sysupdate.report
-  /usr/sbin/slack-slaper openldap-client
+  /usr/sbin/slack-get sysupdate.report
+  /usr/sbin/slack-get openldap-client
  else
-  /usr/sbin/slack-slaper sysupdate.report
+  /usr/sbin/slack-get sysupdate.report
  fi
 fi
 
 }
 
 reporttemplate()
+{
+if [ "X${REPORTZIP}" = "X" ] ; then
+ echo "REPORTZIP is null"
+ exit 1
+fi
+
+if [ ! -f "${REPORTZIP}" ] ; then
+ echo "Error in:{REPORTZIP}"
+ echo "file not found."
+ exit 1
+fi
+
+wget -t 10 -T 10 -w 3 --waitretry=3 --random-wait "http://foo/cgi-bin/sysrpt.sh?${REPORTZIP}" -O -
+return $?
+}
+
+
+ldapreporttemplate()
 {
 if [ "X${CKSUM}" = "X" ] ; then
  echo "CKSUM is null"

@@ -1,6 +1,8 @@
 #!/bin/bash
 
 
+
+
 CWD=`pwd`
 ARGS="${*}"
 ROLE=`echo "${ARGS}"|awk -F\. {'print $1'}|grep -v "^[0-9]*_[0-9]*$"`
@@ -19,22 +21,11 @@ if [ "X${BASEDIR}" = "X" -a -d ./%BASEDIR% ] ; then
 fi
 
 . /etc/default/SYSconstants
+export PATH="${SCRIPTDIR}:${PATH}"
 ##set -x
-roleperms()
-{
-echo
-echo setperms
-${SCRIPTDIR}/roleperms
-echo
-}
+disableALLrepos
+enableSysupdaterepos
 
-setperms()
-{
-echo
-echo setperms
-${SCRIPTDIR}/setperms
-echo
-}
 
 fixbasedir()
 {
@@ -55,6 +46,7 @@ fi
 
 fixmacropaths()
 {
+set -x
 if [ "X${__HOSTSHORT}" != "X" ] ; then
   for i in `find * -name *%HOSTSHORT%*` ; do
     src="${i}"
@@ -79,6 +71,21 @@ if [ "X${__ARCH}" != "X" ] ; then
   done
 fi
 
+if [ -d ./%SYSTEMHOME% ] ; then
+  SYSTEMHOME=`grep "^system:" /etc/passwd|awk -F: {'print $6'}|sed -e "s|^/|./|"`
+  if [ "X${SYSTEMHOME}" != "X" ] ; then
+    SYSTEMBASE=`basename ${SYSTEMHOME}|grep "[a-z,A-Z,0-9,_]"`
+    SYSTEMDIR=`dirname ${SYSTEMHOME}|grep "[a-z,A-Z,0-9,_]"`
+    if [ "X${SYSTEMBASE}" != "X" -a "X${SYSTEMDIR}" != "X" ] ; then
+      mkdir -p "${SYSTEMDIR}"
+      mv ./%SYSTEMHOME% "${SYSTEMBASE}"
+      mv "${SYSTEMBASE}" "${SYSTEMDIR}"
+    fi
+  fi
+fi
+
+rm -rf ./%SYSTEMHOME%
+####read fooooo
 }
 
 
@@ -87,7 +94,10 @@ fixsysupdate()
 ## setup the proper yum repo file
 
 
-set -x
+##set -x
+PULLXREFDATE=`head -1 "opt/unix_ops/etc/SYScurrrev.xref"|awk {'print $8'}`
+test "X${PULLXREFDATE}" != "X" && echo "${PULLXREFDATE}" > "opt/unix_ops/etc/SyncDate"
+
 if [ "X${__OSNAME}" = "XLinux" ] ; then
   LSB_REL=`/usr/bin/lsb_release -a`
   ##test "X${*}" != "X" && ARG_CAT=`cat ${*} 2>/dev/null`
@@ -96,17 +106,27 @@ if [ "X${__OSNAME}" = "XLinux" ] ; then
   case "${LSB_REL}" in
      *Distributor*ID:*EnterpriseEnterprise*Description:*Enterprise*Linux*Enterprise*Linux*|*Distributor*ID:*OracleServer*Description:*Oracle*Linux*Server*release*6*)
        DISTRO="OEL"
-       mv etc/yum.repos.d/sysupdate.repo.OEL etc/yum.repos.d/sysupdate.repo
+       mv etc/yum.repos.d/sysupdate.repo.${DISTRO} etc/yum.repos.d/sysupdate.repo
      ;;
-     *Distributor*ID:*RedHatEnterpriseServer*Description:*Red*Hat*Enterprise*Linux*Server*release*5\.*)
-       DISTRO="RHEL"
-       mv etc/yum.repos.d/sysupdate.repo.RHEL etc/yum.repos.d/sysupdate.repo
+     *Distributor*ID:*CentOS*Description:*CentOS*)
+       DISTRO="CentOS"
+       mv etc/yum.repos.d/sysupdate.repo.${DISTRO} etc/yum.repos.d/sysupdate.repo
+     ;;
+     *Distributor*ID:*RedHatEnterpriseServer*Description:*Red*Hat*Enterprise*Linux*Server*)
+       DISTRO="rhel"
+       mv etc/yum.repos.d/sysupdate.repo.${DISTRO} etc/yum.repos.d/sysupdate.repo
      ;;
      *Distributor*ID:*OracleVMserver*Description:*Oracle*VM*server*release*2.2*)
        DISTRO="OVM22"
-       mv etc/yum.repos.d/sysupdate.repo.OVM22 etc/yum.repos.d/sysupdate.repo
+       mv etc/yum.repos.d/sysupdate.repo.${DISTRO} etc/yum.repos.d/sysupdate.repo
   esac
+
+  ## Linux needs a patch lvl date that doesn't really exist, so we pull it from the SunOS .xref, and now have no further use for the .xref's
+  rm opt/unix_ops/etc/*.xref
+  ####read testy
 fi
+
+perl -p -i -e "s|^enabled=*.*$|enabled=0|g" etc/yum.repos.d/yum-* 2>/dev/null
 
 REPOS=`ls -d etc/yum.repos.d/sysupdate.repo.* 2>/dev/null`
 if [ "X${REPOS}" != "X" ] ; then
@@ -116,10 +136,10 @@ fi
 
 ## set the proper update repo hostname dependant on which network you are on
 if [ "${__SITE}" = "ppa" ]; then
-  perl -pi -e "s/%SHORTSUPPORT%/${__SUPPORTdr1}/g" opt/SYSpca-client/pca.conf 2>/dev/null
+  perl -pi -e "s/%SHORTSUPPORT%/${__SUPPORTdr1}/g" opt/unix_ops/pca.conf 2>/dev/null
   perl -pi -e "s|%SHORTSUPPORT%|${__SUPPORTdr1}|g" etc/yum.repos.d/* 2>/dev/null
 else
-  perl -pi -e "s/%SHORTSUPPORT%/${__SHORTSUPPORT}/g" opt/SYSpca-client/pca.conf 2>/dev/null
+  perl -pi -e "s/%SHORTSUPPORT%/${__SHORTSUPPORT}/g" opt/unix_ops/pca.conf 2>/dev/null
   perl -pi -e "s|%SHORTSUPPORT%|${__SHORTSUPPORT}|g" etc/yum.repos.d/* 2>/dev/null
 fi
 
@@ -130,8 +150,36 @@ find "${ROLEDIR}" -name sysupdate.repo.* -exec /bin/rm {} \;
 }
 
 
+fixaccess.conf()
+{
+access='etc/security/access.conf'
+if [ -f "${access}" -a -f "/${access}" ] ; then
+  merge.rsort.uniq ${access} /${access}
+else
+  rm -f "${access}"
+fi
+}
+
+
+fixauthorized_keys()
+{
+newauthorized_keys=`find * \! -type d -name authorized_keys* 2>/dev/null`
+for i in `echo "${newauthorized_keys}"` ; do
+  merge.rsort.uniq ${i} /${i}
+done
+}
+
+
 fixsysupdate
 fixfiler "${ARGS}"
+
+
+roleperms
+fixbasedir
+fixmacropaths
+fixauthorized_keys
+fixaccess.conf
+
 
 ##case "${SUBROLEACTION}${ACTIONATTR}" in
 ##  config)
@@ -148,7 +196,8 @@ fixfiler "${ARGS}"
 ##    setperms
 ##    exit 0
 ##esac
-chmod 400 ${SCRIPTDIR}/%FETCHCRED%
-chown root:root ${SCRIPTDIR}/%FETCHCRED%
+####chmod 400 ${SCRIPTDIR}/%FETCHCRED%
+####chown root:root ${SCRIPTDIR}/%FETCHCRED%
 
 exit 0
+

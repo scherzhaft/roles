@@ -1,6 +1,12 @@
 #!/bin/sh
 
+
+OSNAME=`/bin/uname -s`
+
 cd /tmp
-/usr/bin/nohup /usr/sbin/slack-slaper sysupdate.report  >/dev/null 2>/dev/null < /dev/null &
+/usr/bin/nohup /usr/sbin/slack-get sysupdate.report  >/dev/null 2>/dev/null < /dev/null &
+
+
+test "X${OSNAME}" = "XSunOS" && /usr/sbin/svcadm -v enable -s svc:/system/cron:default
 
 

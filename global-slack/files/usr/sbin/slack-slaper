@@ -7,7 +7,7 @@ PATH=$PATH:/usr/sfw/bin:/usr/sfw/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/
 echo "Content-type: application/zip"
 echo
 
-CONF="/etc/slack-slaper.conf"
+CONF="/etc/slack-get.conf"
 if [ -f ${CONF} ] ; then
  . ${CONF}
  if [ $? -ne 0 ] ; then
@@ -19,18 +19,18 @@ else
  exit
 fi 
 
-if [ -f ./slack-slaper.conf ] ; then
- . ./slack-slaper.conf
+if [ -f ./slack-get.conf ] ; then
+ . ./slack-get.conf
  if [ $? -ne 0 ] ; then
-  echo "Error in ./slack-slaper.conf."
+  echo "Error in ./slack-get.conf."
   exit
  fi
 fi
 
-if [ -f ./slack-slaper.conf.SIPR ] ; then
- . ./slack-slaper.conf.SIPR
+if [ -f ./slack-get.conf.SIPR ] ; then
+ . ./slack-get.conf.SIPR
  if [ $? -ne 0 ] ; then
-  echo "Error in ./slack-slaper.conf.SIPR"
+  echo "Error in ./slack-get.conf.SIPR"
   exit
  fi
 fi
@@ -129,7 +129,7 @@ FILENAME=`basename $0`
 customecho()
 {
 MESG=$1
-if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+if [ ${FILENAME} = "slack-get-proxy" ] ; then
  echo "${MESG}" > /dev/null
  return 0
 else
@@ -193,7 +193,7 @@ unzipandrunrole()
 CURRENTROLE="`basename $1`"
 
 cd /var/cache/slack/roles
-if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+if [ ${FILENAME} = "slack-get-proxy" ] ; then
  cat ${CURRENTROLE}
  sleep 1
  return 0
@@ -213,10 +213,10 @@ fi
 updateunzipandrunrole()
 {
 
- __ldapsearchhandler -b ${BASEDN} -t cn=${SLACKROLE} data cksum|grep "data:< file://"|perl -p -e "s/\:\< file\:\/\//\=/g" >/tmp/slack-slaperdata$$
- . /tmp/slack-slaperdata$$
+ __ldapsearchhandler -b ${BASEDN} -t cn=${SLACKROLE} data cksum|grep "data:< file://"|perl -p -e "s/\:\< file\:\/\//\=/g" >/tmp/slack-getdata$$
+ . /tmp/slack-getdata$$
  if file ${data}|grep -i zip >/dev/null ; then
-  if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+  if [ ${FILENAME} = "slack-get-proxy" ] ; then
    cat ${data}
    sleep 1
    return 0
@@ -286,14 +286,14 @@ return 4
 
 webupdateunzipandrunrole()
 {
- wget ${WEBSERVER}?${WEBARGS} -O - >/tmp/slack-slaperdata$$
- if file /tmp/slack-slaperdata$$|grep -i zip >/dev/null ; then
-  if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
-   cat /tmp/slack-slaperdata$$
+ wget ${WEBSERVER}?${WEBARGS} -O - >/tmp/slack-getdata$$
+ if file /tmp/slack-getdata$$|grep -i zip >/dev/null ; then
+  if [ ${FILENAME} = "slack-get-proxy" ] ; then
+   cat /tmp/slack-getdata$$
    sleep 1
    return 0
   else
-   mv /tmp/slack-slaperdata$$ /var/cache/slack/roles/${SLACKROLE}.${DATESTRING}.zip
+   mv /tmp/slack-getdata$$ /var/cache/slack/roles/${SLACKROLE}.${DATESTRING}.zip
    cd /var/cache/slack/roles/
    rm -rf /var/cache/slack/roles/${SLACKROLE};rm -rf /var/lib/slack/stage/roles/${SLACKROLE}*
    unzip -o ${SLACKROLE}.${DATESTRING}.zip
@@ -501,7 +501,7 @@ fi
 if [ -z "${ROLE_LIST}" ] ; then
  customecho "Error in: \$ROLE_LIST"
  customecho "Unable to determine ROLE_LIST basedn."
- customecho "This should be set in the /etc/slack-slaper.conf."
+ customecho "This should be set in the /etc/slack-get.conf."
  exit 1
 fi
 
@@ -710,7 +710,7 @@ ROLE_LIST='/var/cache/slack/roles.conf'
 if [ -z "${ROLE_LIST}" ] ; then
  customecho "Error in: \$ROLE_LIST"
  customecho "Unable to determine ROLE_LIST basedn."
- customecho "This should be set in the /etc/slack-slaper.conf."
+ customecho "This should be set in the /etc/slack-get.conf."
  exit 1
 fi
 
@@ -863,13 +863,13 @@ if echo "${ARGS}"|grep -- "--rolelist" >/dev/null ; then
  STATUS=$?
  if [ -f /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log ] ; then
 ##  cat /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
-  zip -mjqT /var/lib/slack/logs/slack-slaper.archivedlogs.zip /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+  zip -mjqT /var/lib/slack/logs/slack-get.archivedlogs.zip /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
  fi
  exit ${STATUS}
 else
  SLACKROLE="`echo $1|awk -F. {'print $1'}`" 
  SLACKSUBROLE=`echo $1|sed -e "s/^${SLACKROLE}\.*//"`
- if [ ${FILENAME} = "slack-slaper-proxy" ] ; then
+ if [ ${FILENAME} = "slack-get-proxy" ] ; then
   proxyroleshandler ${SLACKROLE} ${SLACKSUBROLE}
   STATUS=$?
   exit ${STATUS}
@@ -878,7 +878,7 @@ else
  STATUS=$?
  if [ -f /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log ] ; then
 ## cat /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log 
-  zip -mjqT /var/lib/slack/logs/slack-slaper.archivedlogs.zip /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
+  zip -mjqT /var/lib/slack/logs/slack-get.archivedlogs.zip /var/lib/slack/logs/${FILENAME}.${DATESTRING}.$$.log
  fi
  exit ${STATUS}
 fi

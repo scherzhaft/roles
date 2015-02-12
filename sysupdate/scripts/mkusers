@@ -1,0 +1,39 @@
+#!/bin/bash
+
+doit()
+{
+set -x
+
+SYSTEM=`getent passwd system`
+if [ "X${SYSTEM}" = "X" ] ; then
+  if [ "X${__OSNAME}" = "XSunOS" ] ; then
+    /usr/sbin/groupadd -g 512 system
+    /usr/sbin/useradd -m -d /export/home/system -k /etc/skel -s /bin/bash -u 512 -g system system
+  else
+    /usr/sbin/useradd -u 512 system
+  fi
+fi
+
+access='etc/security/access.conf'
+if [ "X${__OSNAME}" = "XSunOS" ] ; then
+##  perl -p -i -e "s|^system:[^:]+:([^:]+):.*$|system:NP:\1::::::|g" /etc/shadow
+  passwd -N system
+  passwd -u system
+  passwd -x -1 system
+else
+##  perl -p -i -e "s|^system:[^:]+:([^:]+):.*$|system:\!\!:\1::::::|g" /etc/shadow
+  passwd -d  system
+  passwd -l  system
+  passwd -x 99999 system
+  pam_tally2 --user system --reset
+  pam_tally2 --user system --reset
+fi
+
+}
+
+doit
+
+
+perl -p -i -e "s|(^wheel:[^:]*:[^:]+:)|\1system,|g unless /^wheel:[^:]*:[^:]+:system,/" /etc/group
+
+

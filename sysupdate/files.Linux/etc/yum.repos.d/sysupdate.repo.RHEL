@@ -1,7 +1,23 @@
-
-[RHEL_sysupdate_latest]
-name=Red Hat Linux $releasever - $basearch - sysupdate - latest
-baseurl=http://%SHORTSUPPORT%/kickstart/mrepo/rhel-$releasever-$basearch/updates
+[SYS-RedHat-$releasever-base]
+name=SYS-RedHat-$releasever - Base
+baseurl=http://foo/osImage/RH/rhel-$basearch-$releasever/os
 gpgcheck=0
 enabled=1
 
+[SYS-RedHat-$releasever-updates]
+name=SYS-RedHat-$releasever - Updates
+baseurl=http://foo/osImage/RH/rhel-$basearch-$releasever/updates
+gpgcheck=0
+enabled=1
+
+##[SYS-RedHat-$releasever-extras]
+##name=SYS-RedHat-$releasever - Extras
+##baseurl=http://foo/osImage/rhel-$basearch/$releasever/extras
+##gpgcheck=0
+##enabled=1
+##
+##[SYS-RedHat-$releasever-contrib]
+##name=SYS-RedHat-$releasever - Contrib
+##baseurl=http://foo/osImage/rhel-$basearch/$releasever/contrib
+##gpgcheck=0
+##enabled=1

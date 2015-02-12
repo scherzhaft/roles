@@ -12,12 +12,12 @@ fi
 SLACKROLE="${*}"
 
 #######INSERT YOUR CODE HERE######
-if [ -f /etc/slack-slaper.conf.SIPR ] ; then
- cat /etc/slack-slaper.conf.SIPR > /etc/slack-slaper.conf
+if [ -f /etc/slack-get.conf.SIPR ] ; then
+ cat /etc/slack-get.conf.SIPR > /etc/slack-get.conf
 fi
 
-chown root:root /etc/slack-slaper.conf*
-chmod 555 /etc/slack-slaper.conf*
+chown root:root /etc/slack-get.conf*
+chmod 555 /etc/slack-get.conf*
 
 chown root:root /etc/default/slack-functions
 chmod 555 /etc/default/slack-functions
@@ -29,11 +29,11 @@ OSNAME=`uname -s`
 
 if [ "${OSNAME}" != "Linux" ] ; then
  if ls -d /usr/local/etc/openldap/cacerts/????????.0 >/dev/null 2>&1 ; then
-  perl -pi -e "s/ldap\:/ldaps\:/g" /etc/slack-slaper.conf
+  perl -pi -e "s/ldap\:/ldaps\:/g" /etc/slack-get.conf
  fi
 else
  if ls -d /etc/openldap/cacerts/????????.0 >/dev/null 2>&1 ; then
-  perl -pi -e "s/ldap\:/ldaps\:/g" /etc/slack-slaper.conf
+  perl -pi -e "s/ldap\:/ldaps\:/g" /etc/slack-get.conf
  fi
 fi
 set +x

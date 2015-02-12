@@ -1,4 +1,8 @@
 #!/bin/bash
+
+
+##TEST
+
 SLACKROLE="${*}"
 SUBROLEACTION=`echo "${SLACKROLE}"|awk -F\. {'print $2'}|grep -v "^[0-9]*_[0-9]*$"` 
 SUBROLEPKG=`echo "${SLACKROLE}"|awk -F\. {'print $3'}|grep -v "^[0-9]*_[0-9]*$"`
@@ -18,4 +22,6 @@ if [ "X${CURRPKGSTATE}" = "X0" -o "X${SUBROLEPKG}" = "X" -o "X${SUBROLEACTION}" 
   test "X${SUBROLEACTION}${SUBROLEPKG}" = "X" && slacksum "${SLACKROLE}"
   exit 0
 fi
+
+
 

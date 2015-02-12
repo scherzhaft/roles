@@ -28,10 +28,10 @@ __TIMEINSECS="${TIMEINSECS}"
 __DATESTRING="${DATESTRING}"
 __slapwhoami ${__HOSTNAME} >/dev/null 2>/dev/null
 __whichsiteanddomainami >/dev/null 2>&1
-__SUPPORT="FOO${__CLASSIFICATION}01.FOO.${__SITE}.${__DNSDOMAIN}"
+__SUPPORT="${__CLASSIFICATION}slvmqvuus01.${__DNSDOMAIN}"
 __SHORTSUPPORT=`echo "${__SUPPORT}"|awk -F\. {'print $1'}`
 __SITES=`echo "${__SITEMATRIX}"|awk -F\| {'print $2'}`
-__SUPPORTSERVERS=`echo "${__SITES}"|perl -p -e "s/^/FOO${__CLASSIFICATION}01\.FOO\./g"|perl -p -e "s/\n/\.${__DNSDOMAIN}\n/g"`
+__SUPPORTSERVERS=`echo "${__SITES}"|perl -p -e "s/^/${__CLASSIFICATION}slvmqvuus01\./g"|perl -p -e "s/\n/\.${__DNSDOMAIN}\n/g"`
 
 nmsitehosts >/dev/null 2>&1
 
@@ -76,5 +76,10 @@ done
 
 __SOFTWARE="osImage/${__OSNAME}/software/stable/${__ARCH}/${__RELEASE}"
 __PKGS="osImage/${__OSNAME}/PKGS/stable/${__ARCH}/${__RELEASE}"
+__GNU_R=`/usr/bin/lsb_release -r 2>/dev/null|awk {'print $2'}|awk -F\. {'print $1'}`
 
-export __SOFTWARE __SUPPORTSERVERS __SITES __SHORTSUPPORT __SUPPORT __DNSDOMAIN __SITE __SITEMATRIX __cmEnable __CI __CUSTOMERBLOB __CLASSIFICATION __LDAPDN __LDAPADD __LDAPMODIFY __LDAPSEARCH __GREP __OSNAME __HOSTNAME __HOSTSHORT __ARCH __RELEASE __PKGS __SUDO_USER_MAIL __SUDO_USER __DATESTRING __TIMEINSECS __MYCLASSBEES __NMSITEHOSTS __NMSITEHOSTMATRIX
+test "X${__SUDO_USER_MAIL}" = "X" && __SUDO_USER_MAIL='foo@foo'
+test "X${__SUDO_USER}" = "X" && __SUDO_USER="${SUDO_USER}"
+
+
+export __STAT __GNU_R __SOFTWARE __SUPPORTSERVERS __SITES __SHORTSUPPORT __SUPPORT __DNSDOMAIN __SITE __SITEMATRIX __cmEnable __CI __CUSTOMERBLOB __CLASSIFICATION __LDAPDN __LDAPADD __LDAPMODIFY __LDAPSEARCH __GREP __OSNAME __HOSTNAME __HOSTSHORT __ARCH __RELEASE __PKGS __SUDO_USER_MAIL __SUDO_USER __DATESTRING __TIMEINSECS __MYCLASSBEES __NMSITEHOSTS __NMSITEHOSTMATRIX

@@ -1,5 +1,3 @@
-%FOO%|ps1
+foo.foo|ps1prod
+foo.foo.foo|ps1dev
 %FOO%|dr1
-%FOO%|swa1
-%FOO%|ppi
-%FOO%|ppa

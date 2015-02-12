@@ -7,7 +7,7 @@ fi
 VMRPTFILE='vmReport.csv'
 cd "${SYSSVNROOT}"
 HOSTLIST=`ls|grep -v "^summary$"`
-VMRPTDATA=`find . -name *.vm.list -exec grep -H -v -E "(^Name|^NAME|^Domain-0|ID NAME .*| global .*|^primary .*)" {} \;|perl -p -e "s/: *[0-9,\-]* /,/g"|awk {'print $1'}|perl -p -e "s/:/,/g"|perl -p -e "s/\.vm\.list//g"|perl -p -e "s/^\.\///g"|perl -p -e "s/\//,/g"|perl -p -e "s/\,xen\,/\,ovm\/xen\,/g"|perl -p -e "s/\,ldom\,/\,ovm\/ldom\,/g"`
+VMRPTDATA=`find . -name *.vm.list -exec grep -H -v -E "(^Name|^NAME|^Domain-0|ID NAME .*|ID .*FQDN .*| global .*|^primary .*)" {} \;|perl -p -e "s/: *[0-9,\-]* */,/g"|awk {'print $1'}|perl -p -e "s/:/,/g"|perl -p -e "s/\.vm\.list//g"|perl -p -e "s/^\.\///g"|perl -p -e "s/\//,/g"|perl -p -e "s/\,xen\,/\,ovm\/xen\,/g"|perl -p -e "s/\,ldom\,/\,ovm\/ldom\,/g"|perl -p -e "s|^([^\.]+)\.([^\,]+)\,(.*)|\1.\2,\3.\2|g"|while read line ; do DOM=`echo "${line}"|awk -F\. {'print $2'}`;test "X${DOM}" != "X" && echo "${line}"|perl -p -e "s|\.${DOM}\.[^\,]+\.${DOM}\.|.${DOM}.|g"; done`
 
 HVRPTDATA=`echo "${VMRPTDATA}"|awk -F\, '{print $1","$2","$1}'`
 VMRPTDATA=`printf "${VMRPTDATA}\n${HVRPTDATA}\n"|sort -u|grep '.'`
