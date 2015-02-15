@@ -1,0 +1,221 @@
+#!/bin/bash -x
+
+
+. /etc/profile
+
+. /etc/bashrc
+ARGS="${*}"
+##echo "${ARGS}" >/tmp/ARGS
+##exit
+
+ROLE=`echo "${ARGS}"|awk -F\. {'print $1'}|grep -v "^[0-9]*_[0-9]*$"`
+test "X${ROLE}" = "X" && exit 6
+SUBROLEACTION=`echo "${ARGS}"|awk -F\. {'print $2'}|grep -v "^[0-9]*_[0-9]*$"|grep -v ".=."`
+ACTIONATTR=`echo "${ARGS}"|awk -F\. {'print $3'}|grep -v "^[0-9]*_[0-9]*$"|grep -v ".=."`
+PKGARGS=`echo "${ARGS}"|perl -p -e "s/\./\n/g"|grep ".=."`
+export SCRIPTDIR=`dirname $0`
+ROLEDIR=`dirname ${SCRIPTDIR}`
+PATCHES=`cat ${SCRIPTDIR}/PATCHES 2>/dev/null`
+PKGS=`cat ${SCRIPTDIR}/PKGS 2>/dev/null|perl -p -e "s/\n/,/g"`
+RESPONCE=`echo "${PKGS}"|head -1|sed -e "s|,||g"`
+USER=`whoami`
+test "X${USER}" != "X" -a "X${HOME}" = "X" && export HOME="$(getent passwd "${USER}"|awk -F\: {'print $6'})"
+
+cd /glide && rm -rf * .??*
+
+
+/usr/sbin/slack-get sysupdate
+
+. /etc/default/SYSconstants
+export PATH="${SCRIPTDIR}:${PATH}"
+
+disableALLrepos
+enableSysupdaterepos
+
+yum -y update
+yum -y install make
+yum -y install perl
+yum -y install libaio
+yum -y install gcc 
+yum -y install kernel-devel
+yum -y install glibc
+yum -y install glibc.i686
+
+enableALLrepos
+yum -y install mysql-community-client-5.5.*
+
+disableALLrepos
+enableSysupdaterepos
+
+mkdir -p /glide
+
+wget http://foo/SYScontrib/glide-gen2-rhel6_20130813.tar.gz -O /glide/glide-gen2-rhel6_20130813.tar.gz
+read test
+
+cd /glide
+
+tar zxvf glide-gen2-rhel6_20130813.tar.gz
+
+
+read test
+useradd servicenow
+
+
+mkdir /glide/distribution/builds
+mkdir /glide/distribution/builds/current
+
+
+
+
+wget http://foo/SYScontrib/glide-calgary-02-15-2013__cca6-05-23-2013_05-30-2013_1423.zip -O /glide/glide-calgary-02-15-2013__cca6-05-23-2013_05-30-2013_1423.zip
+read test
+mv /glide/*.zip /glide/distribution/builds/current
+chown -R servicenow:servicenow /glide
+
+
+cd /glide
+
+####unzip -o glide-calgary-02-15-2013__cca6-05-23-2013_05-30-2013_1423.zip
+
+chown -R servicenow:servicenow /glide
+
+
+
+read test
+
+export PATH=$PATH:/glide/java/bin
+export JAVA_HOME=/glide/java
+cat /etc/skel/.bashrc > /home/servicenow/.bashrc
+
+echo 'export JAVA_HOME=/glide/java
+export PATH=$JAVA_HOME/bin:$PATH' >> /home/servicenow/.bashrc
+
+cat /home/servicenow/.bashrc
+
+read test
+
+java -jar /glide/distribution/builds/current/*.zip --dst-dir /glide/nodes/lvmsna01_t_16001 install -n lvmsna01-t-16001 -p 16001
+
+perl -p -i.orig -e "s|(^glide.db.name\s+=\s+).*|\1 lvmsna01_t_16001|g" /glide/nodes/lvmsna01_t_16001/conf/glide.db.properties
+
+perl -p -i.orig -e "s|(^glide.db.url\s+=\s+).*|\1 jdbc:mysql://foo-t:3306/|g" /glide/nodes/lvmsna01_t_16001/conf/glide.db.properties
+
+echo 'glide.db.user = lvmsna01_t_16001' >> /glide/nodes/lvmsna01_t_16001/conf/glide.db.properties
+
+echo 'glide.db.password = foo' >> /glide/nodes/lvmsna01_t_16001/conf/glide.db.properties
+
+perl -p -i.orig -e "s|(^glide.proxy.host\s+=\s+).*|\1 http://localhost:16001|g" /glide/nodes/lvmsna01_t_16001/conf/glide.properties
+
+echo "glide.cluster.node_name = node1" >> /glide/nodes/lvmsna01_t_16001/conf/glide.properties
+
+chown -R servicenow:servicenow /glide
+
+
+read test
+
+
+MYROOTRANDO="$(cat /dev/urandom| tr -dc 'a-zA-Z0-9-_@#%&_:<>='|fold -w 15| head -1)"
+echo "${MYROOTRANDO}" > /root/MYSQL_root
+MYROOTVER="$(cat /root/MYSQL_root)"
+
+read test
+
+test "X${MYROOTVER}" != "X" && {
+  perl -p -i.orig -e "s|%ROOTPASS%|${MYROOTVER}|g" "${SCRIPTDIR}/mysql_secure_installation"
+  yes|mysql_secure_installation
+}
+test "X${MYROOTVER}" = "X" && exit 1
+echo '[client]' > /root/.my.cnf
+echo '' >> /root/.my.cnf
+echo "password=\"${MYROOTVER}\"" >> /root/.my.cnf
+
+read test
+
+MYSVCNOWRANDO="$(cat /dev/urandom| tr -dc 'a-zA-Z0-9-_@#%&_:<>='|fold -w 15| head -1)"
+echo "${MYSVCNOWRANDO}" > /var/lib/mysql/MYSQL_servicenow
+MYSVCNOWVER="$(cat /var/lib/mysql/MYSQL_servicenow)"
+read test
+
+test "X${MYSVCNOWVER}" = "X" && exit 1
+echo '[client]' > /var/lib/mysql/.my.cnf
+echo '' >> /var/lib/mysql/.my.cnf
+echo "password=\"${MYSVCNOWVER}\"" >> /var/lib/mysql/.my.cnf
+chown mysql:mysql /var/lib/mysql/.my.cnf
+
+env
+
+echo ${HOME}
+
+
+
+read test
+##adddbuser
+test "X${MYSVCNOWVER}" != "X" && {
+  perl -p -i.orig -e "s|%NOWPASS%|${MYSVCNOWVER}|g" "${SCRIPTDIR}/adduser.sql"
+  mysql -u root < "${SCRIPTDIR}/adduser.sql"  
+}
+
+
+mysql -u root < "${SCRIPTDIR}/test.sql"  
+
+read test
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
