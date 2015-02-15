@@ -36,7 +36,7 @@ if [ "X${TRACKER}" != "X1" ] ; then
 fi
 
 
-/usr/sbin/slack-get njis-app.install.missing
+/usr/sbin/slack-get template-role.install.missing
 
 
 sleep 2
