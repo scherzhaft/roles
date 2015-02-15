@@ -1,0 +1,8 @@
+#!/bin/bash -x
+
+
+chown -R tomcat:tomcat %TOMCATHOME% opt/tomcat7
+chmod 644 %TOMCATHOME%/.bashrc
+chmod 755 %TOMCATHOME%
+chmod -R 755 opt/tomcat7
+

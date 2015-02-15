@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -x
+if [ "X${__OSNAME}" = "XSunOS" ] ; then
+  SUDOERS=/opt/sfw/etc/sudoers
+else
+  SUDOERS=/etc/sudoers
+  chattr -i ${SUDOERS}
+fi
+
+##test "X$1" != "X" && SUDOERS="$1"
+
+doit()
+{
+##. /etc/default/SYSconstants
+
+##set -x
+grep "^system ALL =NOPASSWD: ALL$" ${SUDOERS} >/dev/null 2>&1
+SUDOSTAT="$?"
+
+if [ "X${SUDOSTAT}" != "X0" ] ; then
+  cp ${SUDOERS} ${SUDOERS}.bak
+  sleep 1
+  echo 'system ALL =NOPASSWD: ALL' >> ${SUDOERS}
+else
+  echo "SUDOSTAT=already done"
+fi
+
+##set +x
+}
+
+test "X${SUDOERS}" != "X" && doit
+
+
+

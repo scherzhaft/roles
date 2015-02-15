@@ -1,0 +1,75 @@
+#!/bin/bash
+
+
+
+ARGS="${*}"
+ROLE=`echo "${ARGS}"|awk -F\. {'print $1'}|grep -v "^[0-9]*_[0-9]*$"`
+test "X${ROLE}" = "X" && exit 6
+SUBROLEACTION=`echo "${ARGS}"|awk -F\. {'print $2'}|grep -v "^[0-9]*_[0-9]*$"`
+ACTIONATTR=`echo "${ARGS}"|awk -F\. {'print $3'}|grep -v "^[0-9]*_[0-9]*$"`
+SCRIPTDIR=`dirname $0`
+ROLEDIR=`dirname ${SCRIPTDIR}`
+PATCHES=`cat ${SCRIPTDIR}/PATCHES 2>/dev/null`
+PKGS=`cat ${SCRIPTDIR}/PKGS 2>/dev/null|perl -p -e "s/\n/,/g"`
+. /etc/default/SYSconstants
+export PATH="${SCRIPTDIR}:${PATH}"
+
+if [ "X${__OSNAME}" = "XSunOS" ] ; then
+  test -d /var/sadm/pkg/TRK${NAME}
+  TRACKER="$?"
+else
+  rpm -q TRK${NAME} >/dev/null
+  TRACKER="$?"
+fi
+
+
+main()
+{
+case "${SUBROLEACTION}${ACTIONATTR}" in
+  "")
+    return 0
+  ;;    
+
+  installmissing)
+    setperms
+    return 0
+  ;;
+
+  install)
+    setperms
+    return 0
+  ;;
+
+  re-install)
+    setperms
+    return 0
+  ;;
+
+  remove)
+    setperms
+    return 0
+  ;;
+
+  update|upgrade)
+    setperms
+    return 0
+  ;;
+
+  config)
+    setperms
+    return 0
+  ;;
+
+  appload*)
+    setperms
+    return 0
+  ;;
+
+  *)
+    ##set -x
+    setperms
+    return 0
+esac
+}
+
+main || exit $?

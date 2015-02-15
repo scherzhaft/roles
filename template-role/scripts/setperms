@@ -1,0 +1,4 @@
+#!/bin/bash -x
+
+chown tomcat:tomcat /opt/tomcat7/work /opt/tomcat7/bin/setenv.sh
+chmod 755 /opt/tomcat7/work /opt/tomcat7/bin/setenv.sh

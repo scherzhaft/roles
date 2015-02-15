@@ -1,0 +1,51 @@
+#!/bin/bash
+################################################################################
+################################################################################
+##  usage: ${ROLE}.erase.%%container  ## erase specified webapp %%container
+################################################################################
+################################################################################
+
+
+##set +x
+
+
+test "X${1}" = "X" && {
+  return 1
+  }
+
+CONTAINER="$1"
+##${SUBROLEACTION}" "${ACTIONATTR}"
+
+NAME="${ROLE}.deploy.${CONTAINER}.Tracker"
+DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${ROLE}.${SUBROLEACTION}.${CONTAINER} role."
+if [ "X${__OSNAME}" = "XSunOS" ] ; then
+  test -d /var/sadm/pkg/TRK${NAME}
+  TRACKER="$?"
+else
+  rpm -q "TRK${NAME}" >/dev/null
+  TRACKER="$?"
+fi
+
+if [ "X${TRACKER}" = "X1" ] ; then
+  ERRMESG='
+##################################
+# ALREADY ERASED...DOING NOTHING #
+##################################
+'
+  return 3
+fi
+
+sleep 2
+
+set -x
+rm -rf "/opt/tomcat7/webapps/${CONTAINER}" 
+rm -rf "/opt/tomcat7/${CONTAINER}-config"
+rm -rf "/opt/tomcat7/conf/Catalina/localhost/${CONTAINER}.xml"
+set +x
+
+rm_pkgs "TRK${NAME}"
+
+##read foo
+
+return 0
+

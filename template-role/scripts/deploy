@@ -1,0 +1,60 @@
+#!/bin/bash -x
+################################################################################
+################################################################################
+##  usage: ${ROLE}.deploy.%%container ## deploy ${ROLE} webapp to %%container
+################################################################################
+################################################################################
+
+
+##set +x
+
+
+test "X${1}" = "X" && {
+  return 1
+  }
+
+CONTAINER="$1"
+##${SUBROLEACTION}" "${ACTIONATTR}"
+
+NAME="${ROLE}.${SUBROLEACTION}.${CONTAINER}.Tracker"
+DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${ROLE}.${SUBROLEACTION}.${CONTAINER} role."
+if [ "X${__OSNAME}" = "XSunOS" ] ; then
+  test -d /var/sadm/pkg/TRK${NAME}
+  TRACKER="$?"
+else
+  rpm -q TRK${NAME} >/dev/null
+  TRACKER="$?"
+fi
+
+if [ "X${TRACKER}" != "X1" ] ; then
+  ERRMESG='
+#####################
+# ALREADY INSTALLED #
+#####################
+'
+  return 3
+fi
+
+
+/usr/sbin/slack-get template-role.install.missing
+
+
+sleep 2
+
+cd /usr/local/src/entellitrak || return 2
+
+mktracker
+
+find . -depth -print|cpio -pdmu ${ROLEDIR}/files/opt/tomcat7
+
+test "X${CONTAINER}" != "Xentellitrak" && {
+  mv "${ROLEDIR}/files/opt/tomcat7/webapps/entellitrak" "${ROLEDIR}/files/opt/tomcat7/webapps/${CONTAINER}" 
+  mv "${ROLEDIR}/files/opt/tomcat7/entellitrak-config" "${ROLEDIR}/files/opt/tomcat7/${CONTAINER}-config"
+  mv "${ROLEDIR}/files/opt/tomcat7/conf/Catalina/localhost/entellitrak.xml" "${ROLEDIR}/files/opt/tomcat7/conf/Catalina/localhost/${CONTAINER}.xml"
+  perl -p -i -e "s|/opt/tomcat7/entellitrak-config|/opt/tomcat7/${CONTAINER}-config|g"  "${ROLEDIR}/files/opt/tomcat7/conf/Catalina/localhost/${CONTAINER}.xml"
+  }
+
+##read foo
+
+return 10
+

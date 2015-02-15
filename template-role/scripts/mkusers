@@ -1,0 +1,51 @@
+#!/bin/bash
+
+doit()
+{
+set -x
+
+TOMCAT=`getent passwd tomcat`
+if [ "X${TOMCAT}" = "X" ] ; then
+  if [ "X${__OSNAME}" = "XSunOS" ] ; then
+    TOMCATHOME=/export/home/tomcat
+    /usr/sbin/groupadd -g 91 tomcat
+    /usr/sbin/useradd -m -d ${TOMCATHOME} -k /etc/skel -s /bin/bash -u 91 -g tomcat -c 'Apache Tomcat' tomcat
+  else
+    TOMCATHOME=/home/tomcat
+    /usr/sbin/useradd -u 91 -c 'Apache Tomcat' tomcat
+  fi
+fi
+
+if [ "X${__OSNAME}" = "XSunOS" ] ; then
+##  perl -p -i -e "s|^tomcat:[^:]+:([^:]+):.*$|tomcat:NP:\1::::::|g" /etc/shadow
+  TOMCATHOME=/export/home/tomcat
+  passwd -N tomcat
+  passwd -u tomcat
+  passwd -x -1 tomcat
+else
+##  perl -p -i -e "s|^tomcat:[^:]+:([^:]+):.*$|tomcat:\!\!:\1::::::|g" /etc/shadow
+  TOMCATHOME=/home/tomcat
+  passwd -d  tomcat
+  passwd -l  tomcat
+  passwd -x 99999 tomcat
+  pam_tally2 --user tomcat --reset
+  pam_tally2 --user tomcat --reset
+fi
+
+}
+
+doit
+
+
+##perl -p -i -e "s|(^tomcat:[^:]*?:[^:]*?:[^:]*?:[^:]*?)|\1:${TOMCATHOME}:/bin/bash|g unless |^tomcat:[^:]*?:[^:]*?:[^:]*?:[^:]*?:${TOMCATHOME}:/bin/bash$|" /etc/passwd
+perl -p -i -e "s|(^tomcat:[^:]*?:[^:]*?:[^:]*?:[^:]*?:).*$|\1${TOMCATHOME}:/bin/bash|g" /etc/passwd
+
+ls -d ${TOMCATHOME} || {
+  mkdir -p ${TOMCATHOME}
+  cd /etc/skel && find . -depth -print|cpio -pdmu ${TOMCATHOME}
+  cd /tmp
+  chown -R tomcat:tomcat ${TOMCATHOME}
+  chmod 755 ${TOMCATHOME}
+  } 
+
+

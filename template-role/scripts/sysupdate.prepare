@@ -1,0 +1,35 @@
+#!/bin/bash -x
+
+
+. /etc/default/SYSconstants
+
+case "${__OSNAME}" in
+ SunOS)
+  if [ -L /opt/unix_ops/etc/SYScurrrev.xref ] ; then
+   rm -f /opt/unix_ops/etc/SYScurrrev.xref
+  else
+   PATCHFILECKSUM=`cksum /opt/unix_ops/etc/SYScurrrev.xref 2>&1`
+   STATUS=$?
+   if [ "${STATUS}" = "0" ] ; then
+    PATCHFILECKSUM=`echo "${PATCHFILECKSUM}"|awk {'print $1"."$2'}`
+    headerdate=`head -1 /opt/unix_ops/etc/SYScurrrev.xref|grep "PATCHDIAG"|perl -p -e "s/\#//g"|awk {'print $NF'}|perl -p -e "s/\//\_/g"`
+    if [ "X${headerdate}" != "X" ] ; then
+     destfilename="patchdiag.xref.${headerdate}.${PATCHFILECKSUM}"
+    else
+     destfilename="patchdiag.xref.${PATCHFILECKSUM}"
+    fi
+    mv /opt/unix_ops/etc/SYScurrrev.xref /opt/unix_ops/etc/${destfilename}.xref
+   fi
+  fi
+ ;;
+
+ Linux)
+  echo foo
+ ;;
+ *)
+  echo "unknown OS"
+  return 1
+ 
+esac  
+
+####read test
