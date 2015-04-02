@@ -9,3 +9,4 @@ chown root:root /var/cache/slack/roles.conf
 chmod 770 /var/cache/slack/roles.conf
 
 slacksum "${SLACKROLE}"
+
