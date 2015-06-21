@@ -1,0 +1,428 @@
+#!/bin/bash
+################################################################################
+################################################################################
+##  usage: ${ROLE}.x@x@x@x.%%cmd     ## run %%cmd according to schedule
+##                 | | | |
+##                 | | | +-- day of week (0 - 6)
+##                 | | +---- month (1 - 12)
+##                 | +------ day of month (1 - 31)
+##                 +-------- hour (0 - 23)
+##
+##  usage: ${ROLE}.1time.%%cmd       ## only run %%cmd once
+##  usage: ${ROLE}.xtimes.%%cmd      ## only run %%cmd x number of times
+################################################################################
+################################################################################
+
+roleusage()
+{
+usagepull=`for i in \`ls -d ${SCRIPTDIR}/preinstall\` \`ls -d ${SCRIPTDIR}/*|grep -v "/PATCHES$"|grep -v "/preinstall$"|grep -v "/PKGS$"\` ; do sed '/^[\t,\ ]*$/,$d' ${i} |grep -v '^#\!'|perl -p -e "s|^[\t,\ ]*[\{,\}]{1}\s||g" ; done`
+
+echo '################################################################################
+################################################################################'
+eval echo "\"${usagepull}\""|perl -p -e "s|^[#]{20,}\n||g"
+echo '################################################################################
+################################################################################'
+}
+
+validateargs()
+{
+test "X${TIMES}" = "X" -a "X${SCHEDULE}" = "X"  &&  {
+  echo
+  echo "###########################"
+  echo "##   Invalid arguments   ##"
+  echo "###########################"
+  echo
+  return 2
+  }
+
+echo "${TASK}"|egrep  "(^[0]*[1-9]{1}[0-9]*time[s]?$|^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$)"  &&  {
+  echo
+  echo "######################"
+  echo "##   Invalid task   ##"
+  echo "######################"
+  echo
+  return 2
+  }
+
+test "X${TASK}" = "X" &&  {
+  echo
+  echo "######################"
+  echo "##   Missing task   ##"
+  echo "######################"
+  echo
+  return 2
+  }
+
+return 0      
+}
+
+expandschedule() ##loopable, non specific schedule expander, should return sumple expanded for list of schedule
+{
+RAWSCHEDULE="$1" ; test "X${RAWSCHEDULE}" = "X" && return 1
+MIN="$2" ; test "X${MIN}" = "X" && return 2
+MAX="$3" ; test "X${MAX}" = "X" && return 3
+
+##       | | | |
+##       | | | +-- day of week (0 - 6)
+##       | | +---- month (1 - 12)
+##       | +------ day of month (1 - 31)
+##       +-------- hour (0 - 23)
+
+
+SCHEDULELEN=`echo "${RAWSCHEDULE}"|awk -F\, {'print NF'}`
+
+position='0'
+until [ "${position}" = "${SCHEDULELEN}" ] ; do
+  position=`expr ${position} + 1`
+  time=`echo "${RAWSCHEDULE}"|awk -F\, {'print $"'"${position}"'"'}|grep "[0-9]"`
+  if [ "X${time}" = "X" ] ; then
+    ##echo 'null = any = pass = next'
+    echo '*'
+    ##return 0
+  elif echo "${time}"|egrep "^[0-9]+$" > /dev/null ; then
+    ##echo 'regular numeric compare to current time'
+    ##echo "${time}"
+    test "${time}" -lt "${MIN}" -o "${time}" -ge `expr ${MAX} + ${MIN}`  && return 4
+    echo "${time}"
+  elif echo "${time}"|egrep ".*-.*|^/[0-9]+$" > /dev/null ; then
+    ##echo 'ranged syntax is current hour part of range?'
+    ##echo 'expand the range into raw form'
+    rangestart=`echo "${time}"|awk -F\- {'print $1'}|awk -F\/ {'print $1'}`
+    rangefinish=`echo "${time}"|awk -F\- {'print $2'}|awk -F\/ {'print $1'}`
+    test "X${rangestart}" != "X" &&  {
+      test "${rangestart}" -lt "${MIN}" -o "${rangestart}" -ge `expr ${MAX} + ${MIN}`  && return 4
+      }
+    test "X${rangefinish}" != "X" &&  {
+      test "${rangefinish}" -lt "${MIN}" -o "${rangefinish}" -ge `expr ${MAX} + ${MIN}`  && return 4
+      }
+    
+    test "X${rangestart}" = "X" && rangestart="${MIN}"
+    test "X${rangefinish}" = "X" -a  "X${MIN}" = 'X0' && rangefinish=`expr "${MAX}" - 1`
+    test "X${rangefinish}" = "X" -a  "X${MIN}" = 'X1' && rangefinish="${MAX}"
+    test "${rangestart}" -gt "${rangefinish}" &&  {
+      inmax=`expr ${MAX} - ${rangestart}`
+      ##realspan=`expr ${inmax} + ${rangefinish} + ${MIN}`
+      realspan=`expr ${inmax} + ${rangefinish} + 1`
+      ##test "X${MIN}" = 'X0' && realspan=`expr ${realspan} + 1`
+      }
+    test "${rangestart}" -lt "${rangefinish}"  &&  {
+      realspan=`expr ${rangefinish} - ${rangestart} + ${MIN}`
+      realspan=`expr ${rangefinish} - ${rangestart} + 1`
+      }
+    rangestep=`echo "${time}"|awk -F\/ {'print $2'}`
+    ##exit
+    test "X${rangestep}" = "X" && rangestep='1'
+    ####until [ "${rangestart}" -gt "${rangefinish}" -a "${realspan}" -lt '0' ] ; do
+    ####until [ "${rangestart}" -gt "${rangefinish}" -a "${realspan}" -le '0' ] ; do
+    echo "realspan=${realspan}"
+    echo "rangestart=${rangestart}"
+    echo "rangefinish=${rangefinish}"
+    echo "rangestep=${rangestep}"
+    until [ "${realspan}" -le '0' ] ; do
+      echo "${rangestart}"
+      ##read foo3
+      rangestart=`expr ${rangestart} + ${rangestep}`
+      realspan=`expr ${realspan} - ${rangestep}`
+      test "${rangestart}" -ge `expr ${MAX} + ${MIN}`  && {
+        rangestart=`expr ${rangestart} - ${MAX}`
+        ##realspan=`expr "${realspan}" + "${rangestep}"`
+        test  "${rangestart}" -lt "${MIN}" && rangestart="${MIN}"
+        }
+      done
+    ##test "${rangestart}" -gt "${rangefinish}" && rangestart=`expr ${rangestart} - ${rangestep}`
+    ##echo "${rangestart}"
+  ##elif echo "${time}"|egrep "(/.*|.*/.*)" ; then
+    ##echo 'fractioned syntax compare to current hour'
+  fi
+          
+  done
+
+return 0 
+}
+
+parseschedule() ##slice and dice schedule, send it to expandschedule
+{
+
+MAXHOURS='24'
+MINHOURS='0'
+##MAXDAYSOFMONTH=`cal|grep "[0-9]"|tail -1|awk {'print $NF'}`
+##MAXDAYSOFMONTH=`expr ${MAXDAYSOFMONTH} + 1`
+MAXDAYSOFMONTH='31'
+MINDAYSOFMONTH='1'
+MAXMONTHS='12'
+MINMONTHS='1'
+MAXDAYOFWEEK='7'
+MINDAYOFWEEK='0'
+
+SCHEDULEHOURS=`echo "${SCHEDULE}"|awk -F\@ {'print $1'}`
+SCHEDULEDAYOFMONTHS=`echo "${SCHEDULE}"|awk -F\@ {'print $2'}`
+SCHEDULEMONTHS=`echo "${SCHEDULE}"|awk -F\@ {'print $3'}`
+SCHEDULEDAYOFWEEKS=`echo "${SCHEDULE}"|awk -F\@ {'print $4'}`
+
+SCHEDULEHOURSEXP=`expandschedule  "${SCHEDULEHOURS}" "${MINHOURS}" "${MAXHOURS}"`
+VALIDHOURS="$?"
+test "X${VALIDHOURS}" != "X0" && {
+  echo
+  echo "######################"
+  echo "##   Invalid hours   #"
+  echo "######################"
+  echo
+  return ${VALIDHOURS}
+  }
+      
+SCHEDULEDAYOFMONTHSEXP=`expandschedule  "${SCHEDULEDAYOFMONTHS}" "${MINDAYSOFMONTH}" "${MAXDAYSOFMONTH}"`
+VALIDDAYOFMONTHS="$?"
+test "X${VALIDDAYOFMONTHS}" != "X0" && {
+  echo
+  echo "##############################"
+  echo "##   Invalid day of months   #"
+  echo "##############################"
+  echo
+  return ${VALIDDAYOFMONTHS}
+  }
+      
+SCHEDULEMONTHSEXP=`expandschedule  "${SCHEDULEMONTHS}" "${MINMONTHS}" "${MAXMONTHS}"`
+VALIDMONTHSEXP="$?"
+test "X${VALIDMONTHSEXP}" != "X0" && {
+  echo
+  echo "#######################"
+  echo "##   Invalid months   #"
+  echo "#######################"
+  echo
+  return ${VALIDMONTHSEXP}
+  }
+
+SCHEDULEDAYOFWEEKSEXP=`expandschedule  "${SCHEDULEDAYOFWEEKS}" "${MINDAYOFWEEK}" "${MAXDAYOFWEEK}"`
+VALIDDAYOFWEEKSEXP="$?"
+test "X${VALIDDAYOFWEEKSEXP}" != "X0" && {
+  echo
+  echo "#############################"
+  echo "##   Invalid day of weeks   #"
+  echo "#############################"
+  echo
+  return ${VALIDDAYOFWEEKSEXP}
+  }
+
+return 0
+}
+
+##set -x
+ARGS="${*}"
+ARGS=`echo "${ARGS}"|perl -p -e "s|SUN|0|g"|perl -p -e "s|MON|1|g"|perl -p -e "s|TUE|2|g"|perl -p -e "s|WED|3|g"|perl -p -e "s|THU|4|g"|perl -p -e "s|FRI|5|g"|perl -p -e "s|SAT|6|g"`
+ARGS=`echo "${ARGS}"|perl -p -e "s|JAN|1|g"|perl -p -e "s|FEB|2|g"|perl -p -e "s|MAR|3|g"|perl -p -e "s|APR|4|g"|perl -p -e "s|MAY|5|g"|perl -p -e "s|JUN|6|g"|perl -p -e "s|JUL|7|g"|perl -p -e "s|AUG|8|g"|perl -p -e "s|SEP|9|g"|perl -p -e "s|OCT|10|g"|perl -p -e "s|NOV|11|g"|perl -p -e "s|DEC|12|g"`
+ARGLIST=`echo "${ARGS}"|perl -p -e "s|\.|\n|g"|egrep -v "^[0-9]+_[0-9]+$"`
+##echo "${ARGS}" >/tmp/ARGS
+##exit
+
+ROLE=`echo "${ARGLIST}"|egrep -v "^[0-9]+_[0-9]+$"|head -1`
+test "X${ROLE}" = "X" && exit 6
+
+
+
+ARGCOUNT=`echo "${ARGS}"|perl -p -e  "s|\.[0-9]+_[0-9]+$||g"|awk -F\. {'print NF'}`
+echo 'ARGCOUNT='"${ARGCOUNT}"
+ARG2=`echo "${ARGS}"|awk -F\. {'print $2'}|egrep -v "^[0-9]+_[0-9]+$"`
+ARG3=`echo "${ARGS}"|awk -F\. {'print $3'}|egrep -v "^[0-9]+_[0-9]+$"`
+####SCHEDULE=`echo "${ARGLIST}"|egrep  "^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$"|head -1`
+##SCHEDULE=`echo "${ARGLIST}"|egrep   "^[^@]+@[^@]+@[^@]+@[^@]+$"|head -1`
+####TIMES=`echo "${ARGLIST}"|egrep   "^[0-9]+time[s]?$"|head -1`
+####TASK=`echo "${ARGLIST}"|egrep  -v  "(^${ROLE}$|^${SCHEDULE}$|^${TIMES}$)"|perl -p -e "s|\n|\.|g"|perl -p -e "s|\.$||g"`
+
+####echo "
+####ROLE=${ROLE}
+####SCHEDULE=${SCHEDULE}
+####TIMES=${TIMES}
+####TASK=${TASK}
+####"
+####exit
+
+####PKGARGS=`echo "${ARGS}"|perl -p -e "s|\%.*$||g"|perl -p -e "s/\./\n/g"|grep ".=."`
+export SCRIPTDIR=`dirname $0`
+ROLEDIR=`dirname ${SCRIPTDIR}`
+####RESPONCE=`echo "${PKGS}"|head -1|sed -e "s|,||g"`
+##exit 1
+
+####/usr/sbin/slack-get global-slack
+####/usr/sbin/slack-get global-solaris-adminfunctions
+
+####. /etc/default/SYSconstants
+export PATH="${SCRIPTDIR}:${PATH}"
+
+
+NAME="${ROLE}Tracker"
+DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${ROLE} role."
+##rpm -q TRK${NAME} >/dev/null
+TRACKER="$?"
+
+
+main()
+{
+
+test "X${ARG2}" = "X" -o "X${ARG3}" = "X" &&  {
+  echo
+  echo "##################################"
+  echo "##   Insufficient arguments     ##"
+  echo "##################################"
+  echo
+  roleusage
+  return 2
+  }
+
+case "${ARGCOUNT}" in
+  ""|0|1|2)
+    echo
+    echo "##################################"
+    echo "##   Insufficient arguments     ##"
+    echo "##################################"
+    echo
+    roleusage
+    return 2
+  ;;    
+
+  3)
+    echo "${ARG2}"|egrep   "^[0]*[1-9]{1}[0-9]*time[s]?$"  &&  {
+      TIMES="${ARG2}"
+      TASK="${ARG3}"
+      }
+
+    echo "${ARG2}"|egrep  "^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$"  &&  {
+      SCHEDULE="${ARG2}"
+      TASK="${ARG3}"
+      }
+    
+    validateargs
+    VALID="$?"
+    test "X${VALID}" != "X0" && {
+      roleusage
+      return ${VALID}
+      }
+      
+    echo "
+    ROLE=${ROLE}
+    SCHEDULE=${SCHEDULE}
+    TIMES=${TIMES}
+    TASK=${TASK}
+    "
+    ##exit
+
+    parseschedule
+    PARSED="$?"
+    test "X${PARSED}" != "X0" && {
+      roleusage
+      return ${PARSED}
+      }
+
+    echo "HOURS=${SCHEDULEHOURS}=
+${SCHEDULEHOURSEXP}
+
+DAYOFMONTHS=${SCHEDULEDAYOFMONTHS}=
+${SCHEDULEDAYOFMONTHSEXP}
+
+MONTHS=${SCHEDULEMONTHS}=
+${SCHEDULEMONTHSEXP}
+
+DAYOFWEEKS=${SCHEDULEDAYOFWEEKS}=
+${SCHEDULEDAYOFWEEKSEXP}
+
+"
+    
+    CURRTIME=`date +%k_%d_%m_%w`
+    CURRHOUR=`echo "${CURRTIME}"|awk -F\_ {'print $1'}|perl -p -e "s|^[0]+||g"`
+    CURRDAYOFMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $2'}|perl -p -e "s|^[0]+||g"`
+    CURRMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $3'}|perl -p -e "s|^[0]+||g"`
+    CURRDAYOFWEEK=`echo "${CURRTIME}"|awk -F\_ {'print $4'}|perl -p -e "s|^[0]+||g"`
+
+    return 0 
+  ;;
+
+  *)
+##set -x
+    test "${ARGCOUNT}" -ge "4" &&  {
+      echo "${ARG2}"|egrep   "^[0]*[1-9]{1}[0-9]*time[s]?$"  &&  {
+        TIMES="${ARG2}"
+        }
+
+      echo "${ARG2}"|egrep  "^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$"  &&  {
+        SCHEDULE="${ARG2}"
+        }
+
+      echo "${ARG3}"|egrep   "^[0]*[1-9]{1}[0-9]*time[s]?$"  &&  {
+        TIMES="${ARG3}"
+        }
+
+      echo "${ARG3}"|egrep  "^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$"  &&  {
+        SCHEDULE="${ARG3}"
+        }
+
+      TASK=`echo "${ARGLIST}"|egrep  -v  "(^${ROLE}$|^${SCHEDULE}$|^${TIMES}$)"|perl -p -e "s|\n|\.|g"|perl -p -e "s|\.$||g"`
+
+      validateargs
+      VALID="$?"
+      test "X${VALID}" != "X0" && {
+        roleusage
+        return ${VALID}
+        }
+    
+      echo "
+      ROLE=${ROLE}
+      SCHEDULE=${SCHEDULE}
+      TIMES=${TIMES}
+      TASK=${TASK}
+      "
+
+      parseschedule
+      PARSED="$?"
+      test "X${PARSED}" != "X0" && {
+        roleusage
+        return ${PARSED}
+        }
+
+      echo "HOURS=${SCHEDULEHOURS}=
+${SCHEDULEHOURSEXP}
+
+DAYOFMONTHS=${SCHEDULEDAYOFMONTHS}=
+${SCHEDULEDAYOFMONTHSEXP}
+
+MONTHS=${SCHEDULEMONTHS}=
+${SCHEDULEMONTHSEXP}
+
+DAYOFWEEKS=${SCHEDULEDAYOFWEEKS}=
+${SCHEDULEDAYOFWEEKSEXP}
+
+"
+    
+      CURRTIME=`date +%k_%d_%m_%w`
+      CURRHOUR=`echo "${CURRTIME}"|awk -F\_ {'print $1'}|perl -p -e "s|^[0]+||g"`
+      CURRDAYOFMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $2'}|perl -p -e "s|^[0]+||g"`
+      CURRMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $3'}|perl -p -e "s|^[0]+||g"`
+      CURRDAYOFWEEK=`echo "${CURRTIME}"|awk -F\_ {'print $4'}|perl -p -e "s|^[0]+||g"`
+
+    
+      return ${PARSED} 
+      }
+
+    echo
+    echo "#######################"
+    echo "##   unknown error   ##"
+    echo "#######################"
+    echo
+    roleusage
+    return 2
+      
+esac
+####  ;;    
+
+####case "${SCHEDULE}${TIMES}" in
+####  "")
+####    echo
+####    echo "##################################"
+####    echo "##  Insufficient arguments (0)  ##"
+####    echo "##################################"
+####    echo
+####    roleusage
+####    return 2
+####  ;;    
+
+}
+
+main || exit $?
