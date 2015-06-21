@@ -24,6 +24,22 @@ echo '##########################################################################
 ################################################################################'
 }
 
+cleanexit()
+{
+echo
+echo cleanexit
+if [ "X${ROLEDIR}" != "X" ] ; then
+  ##set -x
+  FILEPATHS=`ls -d ${ROLEDIR}/files ${ROLEDIR}/files.* ${ROLEDIR}/scripts 2>/dev/null`
+  test "X${FILEPATHS}" != "X" && rm -rf ${FILEPATHS} 2>/dev/null
+  test "X${FILEPATHS}" != "X" && mkdir -p ${FILEPATHS} 2>/dev/null
+  ##set +x
+else
+  exit $1
+fi
+return 0
+}
+
 validateargs()
 {
 test "X${TIMES}" = "X" -a "X${SCHEDULE}" = "X"  &&  {
@@ -425,4 +441,6 @@ esac
 
 }
 
-main || exit $?
+main || cleanexit $?
+
+
