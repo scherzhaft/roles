@@ -132,10 +132,10 @@ return 0
 time_to_run() ##check if current time is within schedule
 {
 CURRTIME=`date +%k_%d_%m_%w`
-CURRHOUR=`echo "${CURRTIME}"|awk -F\_ {'print $1'}|perl -p -e "s|^[0]+||g"`
-CURRDAYOFMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $2'}|perl -p -e "s|^[0]+||g"`
-CURRMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $3'}|perl -p -e "s|^[0]+||g"`
-CURRDAYOFWEEK=`echo "${CURRTIME}"|awk -F\_ {'print $4'}|perl -p -e "s|^[0]+||g"`
+CURRHOUR=`echo "${CURRTIME}"|awk -F\_ {'print $1'}|perl -p -e "s|^[0]+||g"|awk {'print $1'}`
+CURRDAYOFMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $2'}|perl -p -e "s|^[0]+||g"|awk {'print $1'}`
+CURRMONTH=`echo "${CURRTIME}"|awk -F\_ {'print $3'}|perl -p -e "s|^[0]+||g"|awk {'print $1'}`
+CURRDAYOFWEEK=`echo "${CURRTIME}"|awk -F\_ {'print $4'}|perl -p -e "s|^[0]+||g"|awk {'print $1'}`
 
 echo 'time check'
 timecheck=''
