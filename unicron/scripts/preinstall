@@ -125,6 +125,7 @@ test "X${SCHEDULE}" != "X" && {
     
   }
 
+TIMES=`echo "${TIMES}"|perl -p -e "s|[^0-9]+||g"`
 return 0      
 }
 
@@ -363,10 +364,6 @@ ROLEDIR=`dirname ${SCRIPTDIR}`
 export PATH="${SCRIPTDIR}:${PATH}"
 
 
-NAME="${ROLE}Tracker"
-DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${ROLE} role."
-##rpm -q TRK${NAME} >/dev/null
-TRACKER="$?"
 
 
 main()
@@ -444,6 +441,37 @@ DAYOFWEEKS=${SCHEDULEDAYOFWEEKS}=
 ${SCHEDULEDAYOFWEEKSEXP}
 
 "
+    NAME=`echo "${TASK}Tracker"|perl -p -e "s| |_|g"`
+    DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${TASK}"
+    ##rpm -q TRK${NAME} >/dev/null
+    ##TRACKER="$?"
+    VERSION=`rpm -q TRK${NAME} >/dev/null && rpm -q TRK${NAME} --queryformat '%{VERSION}\n'|egrep "^[0-9]+$"|head -1`
+    test "X${TIMES}" != "X" -a "X${VERSION}" != "X"  && {
+      test "${VERSION}" -ge "${TIMES}"  && {
+        echo
+        echo "###############################"
+        echo "##   previous run x time(s)  ##"
+        echo "###############################"
+        echo
+        return 2
+        }
+      }
+
+    test "X${TIMES}" != "X" -a "X${SCHEDULE}" != "X"  &&  {
+      time_to_run >/dev/null &&  {
+        mktracker || return 3
+        eval "${TASK}"
+        return 0
+        }
+      return 1
+      }
+      
+    test "X${TIMES}" != "X" -a "X${SCHEDULE}" = "X"  &&  {
+      mktracker || return 3
+      eval "${TASK}"
+      return 0
+      }
+      
 
     time_to_run >/dev/null && eval "${TASK}"
     
@@ -507,8 +535,41 @@ DAYOFWEEKS=${SCHEDULEDAYOFWEEKS}=
 ${SCHEDULEDAYOFWEEKSEXP}
 
 "
+      NAME=`echo "${TASK}Tracker"|perl -p -e "s| |_|g"`
+      DESC="DO NOT REMOVE THIS TRACKER PKG.  Ran ${TASK}"
+      ##rpm -q TRK${NAME} >/dev/null
+      ##TRACKER="$?"
+      VERSION=`rpm -q TRK${NAME} >/dev/null && rpm -q TRK${NAME} --queryformat '%{VERSION}\n'|egrep "^[0-9]+$"|head -1`
+      test "X${TIMES}" != "X" -a "X${VERSION}" != "X"  && {
+        test "${VERSION}" -ge "${TIMES}"  && {
+          echo
+          echo "###############################"
+          echo "##   previous run x time(s)  ##"
+          echo "###############################"
+          echo
+          return 2
+          }
+        }
+  
+      test "X${TIMES}" != "X" -a "X${SCHEDULE}" != "X"  &&  {
+        time_to_run >/dev/null &&  {
+          mktracker || return 3
+          eval "${TASK}"
+          return 0
+          }
+        return 1
+        }
+      
+      test "X${TIMES}" != "X" -a "X${SCHEDULE}" = "X"  &&  {
+        mktracker || return 3
+        eval "${TASK}"
+        return 0
+        }
+      
+
       time_to_run >/dev/null && eval "${TASK}"
-      return ${PARSED} 
+
+      return 0
       }
 
     echo
@@ -533,6 +594,76 @@ esac
 ####    return 2
 ####  ;;    
 
+}
+
+mktracker()
+{
+
+OSNAME=`uname -s`
+
+CWD=`pwd`
+test "X${NAME}" = "X" && return 1
+PKGNAME="TRK${NAME}"
+ARCH=`uname -p`
+test "X${VERSION}" != "X" && VERSION=`expr ${VERSION} + 1`
+test "X${VERSION}" = "X"  && VERSION='1'
+test "X${VERSION}" = "X" && return 6
+test "X${__SUDO_USER_MAIL}" = "X" && __SUDO_USER_MAIL="un-attended@install"
+EMAIL="${__SUDO_USER_MAIL}"
+RELEASE=`uname -r`
+
+test "X${DESC}" = "X" && return 10
+TWORK="/var/tmp/tracker$$"
+TSTAGE="${TWORK}/stage$$"
+eval "mktracker${OSNAME} ${*}"
+return $?
+}
+
+
+mktrackerLinux()
+{
+rm -rf  "${TSTAGE}"
+mkdir -p "${TSTAGE}" || return 12
+mkdir -p "${TWORK}/BUILD" || return 12
+mkdir -p "${TWORK}/BUILDROOT" || return 12
+mkdir -p "${TWORK}/RPMS/noarch" || return 12
+mkdir -p "${TWORK}/SOURCES" || return 12
+mkdir -p "${TWORK}/SPECS" || return 12
+mkdir -p "${TWORK}/RPM_TMP" || return 12
+REL='1'
+
+
+SPECTEMPLATE="Name:            ${PKGNAME}
+Version:        ${VERSION}
+Release:        ${REL}
+Summary:        ${NAME}
+License:        NA
+Group:          Applications/Engineering
+Packager:       ${EMAIL}
+URL:            https://%FOO%%FOO%.%FOO%%FOO%/foo/foo/foo/foo
+Buildroot:      ${TSTAGE}
+BuildArch:      noarch
+%define  _topdir                ${TWORK}
+%define  _tmppath               ${TWORK}/RPM_TMP
+%prep
+%build
+%install
+%clean
+%files
+%defattr (-,root,bin)
+%pre
+%post
+%preun
+%postun
+%description
+${DESC}"
+
+
+echo "${SPECTEMPLATE}" > ${TWORK}/SPECS/${PKGNAME}-${VERSION}-${REL}.spec
+repo install.rpm-build
+rpmbuild --buildroot=${TSTAGE} -bb ${TWORK}/SPECS/${PKGNAME}-${VERSION}-${REL}.spec || return 13
+rpm -Uvh ${TWORK}/RPMS/noarch/${PKGNAME}-${VERSION}-${REL}.noarch.rpm || return 14
+rm -rf ${TWORK}
 }
 
 main || cleanexit $?
