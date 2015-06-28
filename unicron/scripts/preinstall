@@ -69,6 +69,10 @@ test "X${TASK}" = "X" &&  {
   return 2
   }
 
+
+SCHEDULE=`echo "${SCHEDULE}"|perl -p -e "s|SUN|0|g"|perl -p -e "s|MON|1|g"|perl -p -e "s|TUE|2|g"|perl -p -e "s|WED|3|g"|perl -p -e "s|THU|4|g"|perl -p -e "s|FRI|5|g"|perl -p -e "s|SAT|6|g"`
+SCHEDULE=`echo "${SCHEDULE}"|perl -p -e "s|JAN|1|g"|perl -p -e "s|FEB|2|g"|perl -p -e "s|MAR|3|g"|perl -p -e "s|APR|4|g"|perl -p -e "s|MAY|5|g"|perl -p -e "s|JUN|6|g"|perl -p -e "s|JUL|7|g"|perl -p -e "s|AUG|8|g"|perl -p -e "s|SEP|9|g"|perl -p -e "s|OCT|10|g"|perl -p -e "s|NOV|11|g"|perl -p -e "s|DEC|12|g"`
+
 test "X${SCHEDULE}" != "X" && {
 ##                 | | | |
 ##                 | | | +-- day of week (0 - 6)
@@ -323,8 +327,8 @@ return 0
 
 ##set -x
 ARGS="${*}"
-ARGS=`echo "${ARGS}"|perl -p -e "s|SUN|0|g"|perl -p -e "s|MON|1|g"|perl -p -e "s|TUE|2|g"|perl -p -e "s|WED|3|g"|perl -p -e "s|THU|4|g"|perl -p -e "s|FRI|5|g"|perl -p -e "s|SAT|6|g"`
-ARGS=`echo "${ARGS}"|perl -p -e "s|JAN|1|g"|perl -p -e "s|FEB|2|g"|perl -p -e "s|MAR|3|g"|perl -p -e "s|APR|4|g"|perl -p -e "s|MAY|5|g"|perl -p -e "s|JUN|6|g"|perl -p -e "s|JUL|7|g"|perl -p -e "s|AUG|8|g"|perl -p -e "s|SEP|9|g"|perl -p -e "s|OCT|10|g"|perl -p -e "s|NOV|11|g"|perl -p -e "s|DEC|12|g"`
+##ARGS=`echo "${ARGS}"|perl -p -e "s|SUN|0|g"|perl -p -e "s|MON|1|g"|perl -p -e "s|TUE|2|g"|perl -p -e "s|WED|3|g"|perl -p -e "s|THU|4|g"|perl -p -e "s|FRI|5|g"|perl -p -e "s|SAT|6|g"`
+##ARGS=`echo "${ARGS}"|perl -p -e "s|JAN|1|g"|perl -p -e "s|FEB|2|g"|perl -p -e "s|MAR|3|g"|perl -p -e "s|APR|4|g"|perl -p -e "s|MAY|5|g"|perl -p -e "s|JUN|6|g"|perl -p -e "s|JUL|7|g"|perl -p -e "s|AUG|8|g"|perl -p -e "s|SEP|9|g"|perl -p -e "s|OCT|10|g"|perl -p -e "s|NOV|11|g"|perl -p -e "s|DEC|12|g"`
 ARGLIST=`echo "${ARGS}"|perl -p -e "s|\.{2,}|#|g"|perl -p -e "s|\.|\n|g"|egrep -v "^[0-9]+_[0-9]+$"`
 ##echo "${ARGS}" >/tmp/ARGS
 ##exit
