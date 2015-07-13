@@ -1,13 +1,12 @@
 #!/bin/bash
 ################################################################################
 ################################################################################
-##  usage: ${ROLE}.x@x@x@x.%%cmd     ## run %%cmd according to schedule
+##                 .---------------- hour (0 - 23)
+##                 | .-------------- day of month (1 - 31)
+##                 | | .------------ month (1 - 12) OR JAN,FEB,MAR,APR ...
+##                 | | | .---------- day of week (0 - 6) OR SUN,MON,TUE ...
 ##                 | | | |
-##                 | | | +-- day of week (0 - 6)
-##                 | | +---- month (1 - 12)
-##                 | +------ day of month (1 - 31)
-##                 +-------- hour (0 - 23)
-##
+##  usage: ${ROLE}.x@x@x@x.%%cmd     ## run %%cmd according to schedule
 ##  usage: ${ROLE}.1time.%%cmd       ## only run %%cmd once
 ##  usage: ${ROLE}.xtimes.%%cmd      ## only run %%cmd x number of times
 ################################################################################
