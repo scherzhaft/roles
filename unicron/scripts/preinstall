@@ -12,6 +12,48 @@
 ################################################################################
 ################################################################################
 
+##set -x
+ARGS="${*}"
+##ARGS=`echo "${ARGS}"|perl -p -e "s|SUN|0|g"|perl -p -e "s|MON|1|g"|perl -p -e "s|TUE|2|g"|perl -p -e "s|WED|3|g"|perl -p -e "s|THU|4|g"|perl -p -e "s|FRI|5|g"|perl -p -e "s|SAT|6|g"`
+##ARGS=`echo "${ARGS}"|perl -p -e "s|JAN|1|g"|perl -p -e "s|FEB|2|g"|perl -p -e "s|MAR|3|g"|perl -p -e "s|APR|4|g"|perl -p -e "s|MAY|5|g"|perl -p -e "s|JUN|6|g"|perl -p -e "s|JUL|7|g"|perl -p -e "s|AUG|8|g"|perl -p -e "s|SEP|9|g"|perl -p -e "s|OCT|10|g"|perl -p -e "s|NOV|11|g"|perl -p -e "s|DEC|12|g"`
+ARGLIST=`echo "${ARGS}"|perl -p -e "s|\.{2,}|#|g"|perl -p -e "s|\.|\n|g"|egrep -v "^[0-9]+_[0-9]+$"`
+##echo "${ARGS}" >/tmp/ARGS
+##exit
+
+ROLE=`echo "${ARGLIST}"|egrep -v "^[0-9]+_[0-9]+$"|head -1`
+test "X${ROLE}" = "X" && exit 6
+
+
+
+ARGCOUNT=`echo "${ARGS}"|perl -p -e  "s|\.[0-9]+_[0-9]+$||g"|awk -F\. {'print NF'}`
+echo 'ARGCOUNT='"${ARGCOUNT}"
+ARG2=`echo "${ARGS}"|awk -F\. {'print $2'}|egrep -v "^[0-9]+_[0-9]+$"`
+ARG3=`echo "${ARGS}"|awk -F\. {'print $3'}|egrep -v "^[0-9]+_[0-9]+$"`
+####SCHEDULE=`echo "${ARGLIST}"|egrep  "^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$"|head -1`
+##SCHEDULE=`echo "${ARGLIST}"|egrep   "^[^@]+@[^@]+@[^@]+@[^@]+$"|head -1`
+####TIMES=`echo "${ARGLIST}"|egrep   "^[0-9]+time[s]?$"|head -1`
+####TASK=`echo "${ARGLIST}"|egrep  -v  "(^${ROLE}$|^${SCHEDULE}$|^${TIMES}$)"|perl -p -e "s|\n|\.|g"|perl -p -e "s|\.$||g"`
+
+####echo "
+####ROLE=${ROLE}
+####SCHEDULE=${SCHEDULE}
+####TIMES=${TIMES}
+####TASK=${TASK}
+####"
+####exit
+
+####PKGARGS=`echo "${ARGS}"|perl -p -e "s|\%.*$||g"|perl -p -e "s/\./\n/g"|grep ".=."`
+export SCRIPTDIR=`dirname $0`
+ROLEDIR=`dirname ${SCRIPTDIR}`
+####RESPONCE=`echo "${PKGS}"|head -1|sed -e "s|,||g"`
+##exit 1
+
+####/usr/sbin/slack-get global-slack
+####/usr/sbin/slack-get global-solaris-adminfunctions
+
+####. /etc/default/SYSconstants
+export PATH="${SCRIPTDIR}:${PATH}"
+
 roleusage()
 {
 usagepull=`for i in \`ls -d ${SCRIPTDIR}/preinstall\` \`ls -d ${SCRIPTDIR}/*|grep -v "/PATCHES$"|grep -v "/preinstall$"|grep -v "/PKGS$"\` ; do sed '/^[\t,\ ]*$/,$d' ${i} |grep -v '^#\!'|perl -p -e "s|^[\t,\ ]*[\{,\}]{1}\s||g" ; done`
@@ -323,50 +365,6 @@ test "X${VALIDDAYOFWEEKSEXP}" != "X0" && {
 
 return 0
 }
-
-##set -x
-ARGS="${*}"
-##ARGS=`echo "${ARGS}"|perl -p -e "s|SUN|0|g"|perl -p -e "s|MON|1|g"|perl -p -e "s|TUE|2|g"|perl -p -e "s|WED|3|g"|perl -p -e "s|THU|4|g"|perl -p -e "s|FRI|5|g"|perl -p -e "s|SAT|6|g"`
-##ARGS=`echo "${ARGS}"|perl -p -e "s|JAN|1|g"|perl -p -e "s|FEB|2|g"|perl -p -e "s|MAR|3|g"|perl -p -e "s|APR|4|g"|perl -p -e "s|MAY|5|g"|perl -p -e "s|JUN|6|g"|perl -p -e "s|JUL|7|g"|perl -p -e "s|AUG|8|g"|perl -p -e "s|SEP|9|g"|perl -p -e "s|OCT|10|g"|perl -p -e "s|NOV|11|g"|perl -p -e "s|DEC|12|g"`
-ARGLIST=`echo "${ARGS}"|perl -p -e "s|\.{2,}|#|g"|perl -p -e "s|\.|\n|g"|egrep -v "^[0-9]+_[0-9]+$"`
-##echo "${ARGS}" >/tmp/ARGS
-##exit
-
-ROLE=`echo "${ARGLIST}"|egrep -v "^[0-9]+_[0-9]+$"|head -1`
-test "X${ROLE}" = "X" && exit 6
-
-
-
-ARGCOUNT=`echo "${ARGS}"|perl -p -e  "s|\.[0-9]+_[0-9]+$||g"|awk -F\. {'print NF'}`
-echo 'ARGCOUNT='"${ARGCOUNT}"
-ARG2=`echo "${ARGS}"|awk -F\. {'print $2'}|egrep -v "^[0-9]+_[0-9]+$"`
-ARG3=`echo "${ARGS}"|awk -F\. {'print $3'}|egrep -v "^[0-9]+_[0-9]+$"`
-####SCHEDULE=`echo "${ARGLIST}"|egrep  "^[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*@[0-9,/]+[0-9,/,\,,\-]*$"|head -1`
-##SCHEDULE=`echo "${ARGLIST}"|egrep   "^[^@]+@[^@]+@[^@]+@[^@]+$"|head -1`
-####TIMES=`echo "${ARGLIST}"|egrep   "^[0-9]+time[s]?$"|head -1`
-####TASK=`echo "${ARGLIST}"|egrep  -v  "(^${ROLE}$|^${SCHEDULE}$|^${TIMES}$)"|perl -p -e "s|\n|\.|g"|perl -p -e "s|\.$||g"`
-
-####echo "
-####ROLE=${ROLE}
-####SCHEDULE=${SCHEDULE}
-####TIMES=${TIMES}
-####TASK=${TASK}
-####"
-####exit
-
-####PKGARGS=`echo "${ARGS}"|perl -p -e "s|\%.*$||g"|perl -p -e "s/\./\n/g"|grep ".=."`
-export SCRIPTDIR=`dirname $0`
-ROLEDIR=`dirname ${SCRIPTDIR}`
-####RESPONCE=`echo "${PKGS}"|head -1|sed -e "s|,||g"`
-##exit 1
-
-####/usr/sbin/slack-get global-slack
-####/usr/sbin/slack-get global-solaris-adminfunctions
-
-####. /etc/default/SYSconstants
-export PATH="${SCRIPTDIR}:${PATH}"
-
-
 
 
 main()
